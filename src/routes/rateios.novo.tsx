@@ -134,7 +134,7 @@ function NovoRateioPage() {
           consumo_minimo_grupo: parsed.consumoMinimoGrupo,
           pc_fixo_grupo: parsed.pcFixoGrupo,
           pc_adicional_grupo: parsed.pcAdicionalGrupo,
-          fi_intranet_grupo: parsed.fiPefinPfPjGrupo,
+          fi_intranet_grupo: parsed.fiGrupo,
           adm_rateado_grupo: parsed.admRateadoGrupo,
           pct_auto_consumo_minimo: pct.consumoMinimo,
           pct_auto_pc_fixo: pct.pcFixo,
