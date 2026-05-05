@@ -9,38 +9,136 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as RateiosRouteImport } from './routes/rateios'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as EmpresasRouteImport } from './routes/empresas'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as RateiosIndexRouteImport } from './routes/rateios.index'
+import { Route as RateiosNovoRouteImport } from './routes/rateios.novo'
+import { Route as RateiosIdRouteImport } from './routes/rateios.$id'
 
+const RateiosRoute = RateiosRouteImport.update({
+  id: '/rateios',
+  path: '/rateios',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmpresasRoute = EmpresasRouteImport.update({
+  id: '/empresas',
+  path: '/empresas',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RateiosIndexRoute = RateiosIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RateiosRoute,
+} as any)
+const RateiosNovoRoute = RateiosNovoRouteImport.update({
+  id: '/novo',
+  path: '/novo',
+  getParentRoute: () => RateiosRoute,
+} as any)
+const RateiosIdRoute = RateiosIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => RateiosRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/empresas': typeof EmpresasRoute
+  '/login': typeof LoginRoute
+  '/rateios': typeof RateiosRouteWithChildren
+  '/rateios/$id': typeof RateiosIdRoute
+  '/rateios/novo': typeof RateiosNovoRoute
+  '/rateios/': typeof RateiosIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/empresas': typeof EmpresasRoute
+  '/login': typeof LoginRoute
+  '/rateios/$id': typeof RateiosIdRoute
+  '/rateios/novo': typeof RateiosNovoRoute
+  '/rateios': typeof RateiosIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/empresas': typeof EmpresasRoute
+  '/login': typeof LoginRoute
+  '/rateios': typeof RateiosRouteWithChildren
+  '/rateios/$id': typeof RateiosIdRoute
+  '/rateios/novo': typeof RateiosNovoRoute
+  '/rateios/': typeof RateiosIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/empresas'
+    | '/login'
+    | '/rateios'
+    | '/rateios/$id'
+    | '/rateios/novo'
+    | '/rateios/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/empresas'
+    | '/login'
+    | '/rateios/$id'
+    | '/rateios/novo'
+    | '/rateios'
+  id:
+    | '__root__'
+    | '/'
+    | '/empresas'
+    | '/login'
+    | '/rateios'
+    | '/rateios/$id'
+    | '/rateios/novo'
+    | '/rateios/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  EmpresasRoute: typeof EmpresasRoute
+  LoginRoute: typeof LoginRoute
+  RateiosRoute: typeof RateiosRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/rateios': {
+      id: '/rateios'
+      path: '/rateios'
+      fullPath: '/rateios'
+      preLoaderRoute: typeof RateiosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/empresas': {
+      id: '/empresas'
+      path: '/empresas'
+      fullPath: '/empresas'
+      preLoaderRoute: typeof EmpresasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,11 +146,50 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/rateios/': {
+      id: '/rateios/'
+      path: '/'
+      fullPath: '/rateios/'
+      preLoaderRoute: typeof RateiosIndexRouteImport
+      parentRoute: typeof RateiosRoute
+    }
+    '/rateios/novo': {
+      id: '/rateios/novo'
+      path: '/novo'
+      fullPath: '/rateios/novo'
+      preLoaderRoute: typeof RateiosNovoRouteImport
+      parentRoute: typeof RateiosRoute
+    }
+    '/rateios/$id': {
+      id: '/rateios/$id'
+      path: '/$id'
+      fullPath: '/rateios/$id'
+      preLoaderRoute: typeof RateiosIdRouteImport
+      parentRoute: typeof RateiosRoute
+    }
   }
 }
 
+interface RateiosRouteChildren {
+  RateiosIdRoute: typeof RateiosIdRoute
+  RateiosNovoRoute: typeof RateiosNovoRoute
+  RateiosIndexRoute: typeof RateiosIndexRoute
+}
+
+const RateiosRouteChildren: RateiosRouteChildren = {
+  RateiosIdRoute: RateiosIdRoute,
+  RateiosNovoRoute: RateiosNovoRoute,
+  RateiosIndexRoute: RateiosIndexRoute,
+}
+
+const RateiosRouteWithChildren =
+  RateiosRoute._addFileChildren(RateiosRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  EmpresasRoute: EmpresasRoute,
+  LoginRoute: LoginRoute,
+  RateiosRoute: RateiosRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
