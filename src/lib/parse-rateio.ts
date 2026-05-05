@@ -133,6 +133,7 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     intranetNovosPorCnpj: new Map(),
     intranetSeminovosPorCnpj: new Map(),
     unicoAutoPorCnpj: new Map(),
+    pcVariavelPorCnpj: new Map(),
     abasEncontradas: wb.SheetNames,
     abasFaltando: [],
     warnings: [],
