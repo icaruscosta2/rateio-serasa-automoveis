@@ -172,8 +172,8 @@ function NovoRateioPage() {
       const consultasRows = preview.rows.map((r) => ({
         rateio_id: rateioId,
         cod_empresa: r.cod_empresa,
-        qtd_unico_auto_novos: r.qtdNovos,
-        qtd_unico_auto_seminovos: r.qtdSeminovos,
+        qtd_unico_auto_novos: r.qtdUnicoAuto,
+        qtd_unico_auto_seminovos: 0,
         qtd_intranet: r.qtdIntranet,
         qtd_pc_segmento: r.qtdPcSegmento,
       }));
