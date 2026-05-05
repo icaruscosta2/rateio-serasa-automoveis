@@ -228,7 +228,7 @@ function NovoRateioPage() {
           <CardHeader>
             <CardTitle>1. Mês e Upload</CardTitle>
             <CardDescription>
-              Envie a planilha mensal contendo as abas <strong>Demonstrativo</strong> e <strong>Intranet</strong>.
+              Envie a planilha mensal contendo as abas <strong>Demonstrativo</strong>, <strong>Intranet</strong> e <strong>Power Curve Variável</strong>.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
