@@ -272,6 +272,9 @@ function NovoRateioPage() {
                 <div className="text-xs text-muted-foreground">
                   Único Auto: {parsed.unicoAutoPorCnpj.size} CNPJs · {Array.from(parsed.unicoAutoPorCnpj.values()).reduce((a, b) => a + b, 0)} processos
                 </div>
+                <div className="text-xs text-muted-foreground">
+                  Power Curve Variável: {parsed.pcVariavelPorCnpj.size} CNPJs · {Array.from(parsed.pcVariavelPorCnpj.values()).reduce((a, b) => a + b, 0)} consultas
+                </div>
                 {parsed.warnings.length > 0 && (
                   <ul className="text-xs text-amber-700 list-disc pl-5">
                     {parsed.warnings.map((w, i) => <li key={i}>{w}</li>)}
