@@ -172,8 +172,8 @@ function NovoRateioPage() {
       const consultasRows = preview.rows.map((r) => ({
         rateio_id: rateioId,
         cod_empresa: r.cod_empresa,
-        qtd_unico_auto_novos: r.qtdNovos,
-        qtd_unico_auto_seminovos: r.qtdSeminovos,
+        qtd_unico_auto_novos: r.qtdUnicoAuto,
+        qtd_unico_auto_seminovos: 0,
         qtd_intranet: r.qtdIntranet,
         qtd_pc_segmento: r.qtdPcSegmento,
       }));
@@ -268,6 +268,9 @@ function NovoRateioPage() {
                 </div>
                 <div className="text-xs text-muted-foreground">
                   Intranet: {parsed.intranetPorCnpj.size} CNPJs distintos · Novos: {parsed.intranetNovosPorCnpj.size} · Seminovos: {parsed.intranetSeminovosPorCnpj.size}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Único Auto: {parsed.unicoAutoPorCnpj.size} CNPJs · {Array.from(parsed.unicoAutoPorCnpj.values()).reduce((a, b) => a + b, 0)} processos
                 </div>
                 {parsed.warnings.length > 0 && (
                   <ul className="text-xs text-amber-700 list-disc pl-5">

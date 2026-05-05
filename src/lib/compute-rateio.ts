@@ -26,6 +26,7 @@ export interface RateioRow {
   qtdSeminovos: number;
   qtdIntranet: number;
   qtdPcSegmento: number;
+  qtdUnicoAuto: number;
   consumoMinimo: number;
   pcFixo: number;
   pcAdicional: number;
@@ -75,6 +76,11 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     0,
   );
 
+  const totalUnicoAuto = incluidas.reduce(
+    (s, e) => s + (e.cnpj_normalizado ? parsed.unicoAutoPorCnpj.get(e.cnpj_normalizado) ?? 0 : 0),
+    0,
+  );
+
   const propNovos = totalNovos + totalSeminovos > 0 ? totalNovos / (totalNovos + totalSeminovos) : 0;
   const propSeminovos = 1 - propNovos;
 
@@ -83,14 +89,20 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     const qNovos = parsed.intranetNovosPorCnpj.get(c) ?? 0;
     const qSemi = parsed.intranetSeminovosPorCnpj.get(c) ?? 0;
     const qIntra = parsed.intranetPorCnpj.get(c) ?? 0;
-    const qPc = qIntra; // base provisória: Intranet (até receber base "Único Auto")
+    const qUnico = parsed.unicoAutoPorCnpj.get(c) ?? 0;
+    const qPc = qUnico; // base oficial: Único Auto
 
     const consumoMinimo = e.is_matriz && matrizes.length > 0 ? fatia.consumoMinimo / matrizes.length : 0;
     const pcFixo = incluidas.length > 0 ? fatia.pcFixo / incluidas.length : 0;
-    const pcAdicional = totalIntranet > 0 ? (fatia.pcAdicional * qIntra) / totalIntranet : 0;
+    // PC Adicional: rateado por Único Auto (fallback Intranet se UnicoAuto ausente)
+    const pcAdicional =
+      totalUnicoAuto > 0
+        ? (fatia.pcAdicional * qUnico) / totalUnicoAuto
+        : totalIntranet > 0
+          ? (fatia.pcAdicional * qIntra) / totalIntranet
+          : 0;
     const fiTotalCnpj = totalIntranet > 0 ? (fatia.fi * qIntra) / totalIntranet : 0;
     const admRateado = totalIntranet > 0 ? (fatia.adm * qIntra) / totalIntranet : 0;
-    // split F&I em novos/seminovos pela proporção da própria Intranet (geral)
     const fiNovos = fiTotalCnpj * propNovos;
     const fiSeminovos = fiTotalCnpj * propSeminovos;
     const total = consumoMinimo + pcFixo + pcAdicional + fiNovos + fiSeminovos + admRateado;
@@ -102,6 +114,7 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
       qtdSeminovos: qSemi,
       qtdIntranet: qIntra,
       qtdPcSegmento: qPc,
+      qtdUnicoAuto: qUnico,
       consumoMinimo,
       pcFixo,
       pcAdicional,
@@ -118,6 +131,7 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
       qtdSeminovos: acc.qtdSeminovos + r.qtdSeminovos,
       qtdIntranet: acc.qtdIntranet + r.qtdIntranet,
       qtdPcSegmento: acc.qtdPcSegmento + r.qtdPcSegmento,
+      qtdUnicoAuto: acc.qtdUnicoAuto + r.qtdUnicoAuto,
       consumoMinimo: acc.consumoMinimo + r.consumoMinimo,
       pcFixo: acc.pcFixo + r.pcFixo,
       pcAdicional: acc.pcAdicional + r.pcAdicional,
@@ -127,7 +141,7 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
       total: acc.total + r.total,
     }),
     {
-      qtdNovos: 0, qtdSeminovos: 0, qtdIntranet: 0, qtdPcSegmento: 0,
+      qtdNovos: 0, qtdSeminovos: 0, qtdIntranet: 0, qtdPcSegmento: 0, qtdUnicoAuto: 0,
       consumoMinimo: 0, pcFixo: 0, pcAdicional: 0, fiNovos: 0, fiSeminovos: 0,
       admRateado: 0, total: 0,
     },

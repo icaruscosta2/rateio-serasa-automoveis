@@ -16,6 +16,8 @@ export interface ParseResult {
   intranetPorCnpj: Map<string, number>;
   intranetNovosPorCnpj: Map<string, number>;
   intranetSeminovosPorCnpj: Map<string, number>;
+  // Único Auto — base oficial para o rateio do PC Adicional entre lojas auto
+  unicoAutoPorCnpj: Map<string, number>;
   // Diagnóstico
   abasEncontradas: string[];
   abasFaltando: string[];
@@ -128,6 +130,7 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     intranetPorCnpj: new Map(),
     intranetNovosPorCnpj: new Map(),
     intranetSeminovosPorCnpj: new Map(),
+    unicoAutoPorCnpj: new Map(),
     abasEncontradas: wb.SheetNames,
     abasFaltando: [],
     warnings: [],
@@ -235,6 +238,24 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
           (result.intranetNovosPorCnpj.get(cnpj) ?? 0) + 1,
         );
       }
+    }
+  }
+
+  // ============= Único Auto (UNICOAUTO) =============
+  const unicoSheet = findSheet(wb, ["UNICOAUTO", "Unico Auto", "Único Auto"]);
+  if (!unicoSheet) {
+    result.warnings.push(
+      "Aba UNICOAUTO não encontrada — PC Adicional será rateado pela Intranet (fallback).",
+    );
+  } else {
+    const rows = sheetToRowsByHeader(wb.Sheets[unicoSheet], ["CNPJ", "Estabelecimento"]);
+    if (rows.length === 0) {
+      result.warnings.push("UNICOAUTO: cabeçalho 'CNPJ / Estabelecimento' não localizado.");
+    }
+    for (const r of rows) {
+      const cnpj = normalizeCnpj(get(r, "CNPJ"));
+      if (!cnpj) continue;
+      result.unicoAutoPorCnpj.set(cnpj, (result.unicoAutoPorCnpj.get(cnpj) ?? 0) + 1);
     }
   }
 
