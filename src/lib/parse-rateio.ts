@@ -16,8 +16,10 @@ export interface ParseResult {
   intranetPorCnpj: Map<string, number>;
   intranetNovosPorCnpj: Map<string, number>;
   intranetSeminovosPorCnpj: Map<string, number>;
-  // Único Auto — base oficial para o rateio do PC Adicional entre lojas auto
+  // Único Auto — referência (mantida para diagnóstico)
   unicoAutoPorCnpj: Map<string, number>;
+  // Power Curve Variável — base oficial para rateio do PC Adicional (consultas por CNPJ)
+  pcVariavelPorCnpj: Map<string, number>;
   // Diagnóstico
   abasEncontradas: string[];
   abasFaltando: string[];
