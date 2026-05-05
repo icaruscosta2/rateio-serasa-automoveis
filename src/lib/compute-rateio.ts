@@ -66,15 +66,7 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     (s, e) => s + (e.cnpj_normalizado ? parsed.intranetPorCnpj.get(e.cnpj_normalizado) ?? 0 : 0),
     0,
   );
-  const totalNovos = incluidas.reduce(
-    (s, e) => s + (e.cnpj_normalizado ? parsed.intranetNovosPorCnpj.get(e.cnpj_normalizado) ?? 0 : 0),
-    0,
-  );
-  const totalSeminovos = incluidas.reduce(
-    (s, e) =>
-      s + (e.cnpj_normalizado ? parsed.intranetSeminovosPorCnpj.get(e.cnpj_normalizado) ?? 0 : 0),
-    0,
-  );
+
 
   const totalUnicoAuto = incluidas.reduce(
     (s, e) => s + (e.cnpj_normalizado ? parsed.unicoAutoPorCnpj.get(e.cnpj_normalizado) ?? 0 : 0),
