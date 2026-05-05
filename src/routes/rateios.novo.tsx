@@ -50,7 +50,7 @@ function NovoRateioPage() {
   const [sel, setSel] = useState<Record<number, { incluida: boolean; matriz: boolean }>>({});
 
   const [pct, setPct] = useState({
-    consumoMinimo: 0.56, pcFixo: 0.56, pcAdicional: 0.56, fi: 0.56, adm: 0.56,
+    consumoMinimo: 0.56, pcFixo: 0.667, pcAdicional: 0.56, fi: 0.56, adm: 0.56,
   });
   const [saving, setSaving] = useState(false);
 
