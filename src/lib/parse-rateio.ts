@@ -1,52 +1,50 @@
 import * as XLSX from "xlsx";
 import { normalizeCnpj } from "@/lib/cnpj";
 
-export interface DemonstrativoRow {
-  produto: string;
-  usuario: string | null;
-  valor: number;
-  qtd: number;
-}
-
 export interface ParseResult {
-  // Valores agregados do grupo (R$)
+  // Valores agregados do grupo (R$) — vindos do Demonstrativo
   consumoMinimoGrupo: number;
   pcFixoGrupo: number;
-  pcCreditoTotalGrupo: number; // soma de tudo PC CRÉDITO
-  fiPefinPfPjGrupo: number; // CREDNET SERASA PEFIN PF/PJ TOP
-  pcAdicionalGrupo: number; // PC CRÉDITO total - F&I
-  admRateadoGrupo: number; // todas as linhas da REJANE
-  // Contagens por CNPJ normalizado
+  pcAdicionalGrupo: number; // logon "PC CREDITO" menos F&I PEFIN PF/PJ
+  fiGrupo: number; // PEFIN PF + PJ + linhas de outros usuários (exceto Rejane e PC CREDITO)
+  admRateadoGrupo: number; // linhas da REJANE
+  // Diagnóstico do Demonstrativo
+  demoTotalLogonPcCredito: number;
+  demoFiPefinPf: number;
+  demoFiPefinPj: number;
+  // Contagens por CNPJ normalizado (a partir da Intranet)
   intranetPorCnpj: Map<string, number>;
-  unicoAutoNovosPorCnpj: Map<string, number>;
-  unicoAutoSeminovosPorCnpj: Map<string, number>;
-  // Power Curve por segmento (para aplicar % no PC Adicional)
-  pcSegmentoTotais: { auto: number; pesados: number; motos: number; outros: number };
-  pcAutoPorCnpj: Map<string, number>;
-  // diagnostico
+  intranetNovosPorCnpj: Map<string, number>;
+  intranetSeminovosPorCnpj: Map<string, number>;
+  // Diagnóstico
   abasEncontradas: string[];
   abasFaltando: string[];
+  warnings: string[];
 }
 
-const FI_KEYWORDS = ["CREDNET SERASA PEFIN PF TOP", "CREDNET SERASA PEFIN PJ TOP"];
+const PRODUTO_CONSUMO_MINIMO = "CONSUMO MINIMO";
+const PRODUTO_PC_FIXO = "POWERCURVE CREDITO CONSUMO MINIMO";
+const LOGON_PC_CREDITO = "PC CREDITO";
+const FI_PRODUTOS = ["CREDNET SERASA PEFIN PF TOP", "CREDNET SERASA PEFIN PJ TOP"];
 const REJANE = "REJANE";
 
+function norm(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function findSheet(wb: XLSX.WorkBook, candidates: string[]): string | null {
-  const normalize = (s: string) =>
-    s
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .replace(/\s+/g, " ")
-      .trim();
-  const map = new Map(wb.SheetNames.map((n) => [normalize(n), n]));
+  const map = new Map(wb.SheetNames.map((n) => [norm(n), n]));
   for (const c of candidates) {
-    const hit = map.get(normalize(c));
+    const hit = map.get(norm(c));
     if (hit) return hit;
   }
-  // contains-match
   for (const c of candidates) {
-    const target = normalize(c);
+    const target = norm(c);
     for (const [k, v] of map) {
       if (k.includes(target)) return v;
     }
@@ -56,35 +54,64 @@ function findSheet(wb: XLSX.WorkBook, candidates: string[]): string | null {
 
 function toNumber(v: unknown): number {
   if (typeof v === "number") return v;
-  if (v === null || v === undefined) return 0;
-  const s = String(v).trim().replace(/\./g, "").replace(",", ".");
+  if (v === null || v === undefined || v === "") return 0;
+  const s = String(v).trim().replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
   const n = Number(s);
   return Number.isFinite(n) ? n : 0;
 }
 
-function getCol(row: Record<string, unknown>, ...names: string[]): unknown {
-  const keys = Object.keys(row);
-  for (const n of names) {
-    const target = n.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-    const found = keys.find((k) => {
-      const nk = k.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-      return nk === target || nk.includes(target);
-    });
-    if (found && row[found] !== null && row[found] !== "") return row[found];
+/**
+ * Lê uma planilha como matriz e localiza a linha de cabeçalho que contém
+ * todas as colunas obrigatórias (busca tolerante a acentos/caixa). Retorna
+ * objetos { coluna -> valor } usando os nomes originais do cabeçalho.
+ */
+function sheetToRowsByHeader(
+  ws: XLSX.WorkSheet,
+  required: string[],
+): Record<string, unknown>[] {
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+    header: 1,
+    defval: null,
+    blankrows: false,
+  });
+  const reqNorm = required.map(norm);
+  let headerIdx = -1;
+  let headers: string[] = [];
+  for (let i = 0; i < Math.min(matrix.length, 30); i++) {
+    const row = matrix[i] ?? [];
+    const cells = row.map((c) => (c == null ? "" : String(c)));
+    const cellsNorm = cells.map(norm);
+    const allFound = reqNorm.every((r) => cellsNorm.some((c) => c === r));
+    if (allFound) {
+      headerIdx = i;
+      headers = cells;
+      break;
+    }
   }
-  return null;
+  if (headerIdx === -1) return [];
+  const rows: Record<string, unknown>[] = [];
+  for (let i = headerIdx + 1; i < matrix.length; i++) {
+    const row = matrix[i] ?? [];
+    const obj: Record<string, unknown> = {};
+    let any = false;
+    for (let j = 0; j < headers.length; j++) {
+      const h = headers[j];
+      if (!h) continue;
+      const v = row[j] ?? null;
+      obj[h] = v;
+      if (v !== null && v !== "") any = true;
+    }
+    if (any) rows.push(obj);
+  }
+  return rows;
 }
 
-function isAuto(seg: string): boolean {
-  const s = seg.toUpperCase();
-  return s.includes("AUTOMOV") || s.includes("AUTO");
-}
-function isPesados(seg: string): boolean {
-  return seg.toUpperCase().includes("PESAD");
-}
-function isMotos(seg: string): boolean {
-  const s = seg.toUpperCase();
-  return s.includes("MOTO");
+function get(row: Record<string, unknown>, name: string): unknown {
+  const target = norm(name);
+  for (const k of Object.keys(row)) {
+    if (norm(k) === target) return row[k];
+  }
+  return null;
 }
 
 export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
@@ -92,126 +119,122 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
   const result: ParseResult = {
     consumoMinimoGrupo: 0,
     pcFixoGrupo: 0,
-    pcCreditoTotalGrupo: 0,
-    fiPefinPfPjGrupo: 0,
     pcAdicionalGrupo: 0,
+    fiGrupo: 0,
     admRateadoGrupo: 0,
+    demoTotalLogonPcCredito: 0,
+    demoFiPefinPf: 0,
+    demoFiPefinPj: 0,
     intranetPorCnpj: new Map(),
-    unicoAutoNovosPorCnpj: new Map(),
-    unicoAutoSeminovosPorCnpj: new Map(),
-    pcSegmentoTotais: { auto: 0, pesados: 0, motos: 0, outros: 0 },
-    pcAutoPorCnpj: new Map(),
+    intranetNovosPorCnpj: new Map(),
+    intranetSeminovosPorCnpj: new Map(),
     abasEncontradas: wb.SheetNames,
     abasFaltando: [],
+    warnings: [],
   };
 
-  // ---- Demonstrativo ----
+  // ============= Demonstrativo =============
   const demoSheet = findSheet(wb, ["Demonstrativo"]);
-  if (!demoSheet) result.abasFaltando.push("Demonstrativo");
-  else {
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[demoSheet], {
-      defval: null,
-    });
+  if (!demoSheet) {
+    result.abasFaltando.push("Demonstrativo");
+  } else {
+    const rows = sheetToRowsByHeader(wb.Sheets[demoSheet], [
+      "Descrição de Produto NF",
+      "Nome do Logon",
+      "ValorTotalLogon",
+    ]);
+    if (rows.length === 0) {
+      result.warnings.push(
+        "Demonstrativo: cabeçalho 'Descrição de Produto NF / Nome do Logon / ValorTotalLogon' não localizado.",
+      );
+    }
+    let outrosFi = 0;
     for (const r of rows) {
-      const produto = String(getCol(r, "Produto", "Descrição", "Descricao", "Item") ?? "").trim();
-      const usuario = String(
-        getCol(r, "Nome do Logon", "Usuário", "Usuario", "Login") ?? "",
-      ).trim();
-      const valor = toNumber(getCol(r, "Valor Total", "Valor", "Total"));
-      const grupo = String(getCol(r, "Grupo", "Categoria") ?? "").toUpperCase();
-      const prodU = produto.toUpperCase();
+      const produto = norm(String(get(r, "Descrição de Produto NF") ?? ""));
+      const nomeLogon = norm(String(get(r, "Nome do Logon") ?? ""));
+      const valor = toNumber(get(r, "ValorTotalLogon"));
+      if (!produto) continue;
 
-      if (prodU.includes("CONSUMO MINIMO") || prodU.includes("CONSUMO MÍNIMO")) {
+      // CONSUMO MINIMO (item dedicado, sem logon)
+      if (produto === PRODUTO_CONSUMO_MINIMO) {
         result.consumoMinimoGrupo += valor;
         continue;
       }
-      if (prodU.includes("POWER CURVE") && prodU.includes("FIXO")) {
+      // POWER CURVE FIXO
+      if (produto === PRODUTO_PC_FIXO) {
         result.pcFixoGrupo += valor;
         continue;
       }
-      // PC CRÉDITO group
-      const inPcCredito =
-        grupo.includes("PC CREDITO") ||
-        grupo.includes("PC CRÉDITO") ||
-        grupo.includes("LOGON PC CREDITO");
-      if (inPcCredito) {
-        result.pcCreditoTotalGrupo += valor;
-        if (FI_KEYWORDS.some((k) => prodU.includes(k))) {
-          result.fiPefinPfPjGrupo += valor;
-        }
-      }
-      // ADM Rateado: linhas da Rejane
-      if (usuario.toUpperCase().includes(REJANE)) {
+
+      const isFiProduto = FI_PRODUTOS.some((p) => produto === norm(p));
+      const isRejane = nomeLogon.includes(REJANE);
+      const isLogonPcCredito = nomeLogon === LOGON_PC_CREDITO;
+
+      // ADM Rateado: tudo da Rejane
+      if (isRejane) {
         result.admRateadoGrupo += valor;
+        continue;
       }
+
+      // F&I PEFIN PF / PJ (tanto sob "PC CREDITO" quanto outros usuários)
+      if (isFiProduto) {
+        result.fiGrupo += valor;
+        if (produto === norm(FI_PRODUTOS[0])) result.demoFiPefinPf += valor;
+        else result.demoFiPefinPj += valor;
+        if (isLogonPcCredito) result.demoTotalLogonPcCredito += valor;
+        continue;
+      }
+
+      // Logon "PC CREDITO" (não-F&I) → PC Adicional
+      if (isLogonPcCredito) {
+        result.pcAdicionalGrupo += valor;
+        result.demoTotalLogonPcCredito += valor;
+        continue;
+      }
+
+      // Outros usuários (não Rejane, não PC CREDITO) → F&I
+      result.fiGrupo += valor;
+      outrosFi += valor;
     }
-    result.pcAdicionalGrupo = result.pcCreditoTotalGrupo - result.fiPefinPfPjGrupo;
+    if (outrosFi > 0) {
+      result.warnings.push(
+        `F&I: somados R$ ${outrosFi.toFixed(2)} de consultas avulsas de outros usuários (não Rejane).`,
+      );
+    }
   }
 
-  // ---- Logon Intranet ----
-  const intranetSheet = findSheet(wb, ["Logon Intranet", "Intranet"]);
-  if (!intranetSheet) result.abasFaltando.push("Logon Intranet");
-  else {
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[intranetSheet], {
-      defval: null,
-    });
-    for (const r of rows) {
-      const cnpj = normalizeCnpj(getCol(r, "CNPJ", "CGC"));
-      if (!cnpj) continue;
-      const qtd = toNumber(getCol(r, "Qtd", "Quantidade", "Consultas", "Total"));
-      result.intranetPorCnpj.set(cnpj, (result.intranetPorCnpj.get(cnpj) ?? 0) + (qtd || 1));
+  // ============= Intranet =============
+  const intranetSheet = findSheet(wb, ["Intranet", "Logon Intranet"]);
+  if (!intranetSheet) {
+    result.abasFaltando.push("Intranet");
+  } else {
+    const rows = sheetToRowsByHeader(wb.Sheets[intranetSheet], [
+      "EMPRESA",
+      "CNPJ",
+    ]);
+    if (rows.length === 0) {
+      result.warnings.push("Intranet: cabeçalho 'EMPRESA / CNPJ' não localizado.");
     }
-  }
-
-  // ---- Único Auto ----
-  const unicoSheet = findSheet(wb, ["Único Auto", "Unico Auto", "UnicoAuto"]);
-  if (!unicoSheet) result.abasFaltando.push("Único Auto");
-  else {
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[unicoSheet], {
-      defval: null,
-    });
     for (const r of rows) {
-      const cnpj = normalizeCnpj(getCol(r, "CNPJ", "CGC"));
+      const cnpj = normalizeCnpj(get(r, "CNPJ"));
       if (!cnpj) continue;
-      const depto = String(getCol(r, "Departamento", "Depto") ?? "").toUpperCase();
-      const qtd = toNumber(getCol(r, "Qtd", "Quantidade", "Consultas", "Total")) || 1;
+      const depto = norm(String(get(r, "DEPARTAMENTO") ?? ""));
+      result.intranetPorCnpj.set(
+        cnpj,
+        (result.intranetPorCnpj.get(cnpj) ?? 0) + 1,
+      );
       if (depto.includes("SEMINOV")) {
-        result.unicoAutoSeminovosPorCnpj.set(
+        result.intranetSeminovosPorCnpj.set(
           cnpj,
-          (result.unicoAutoSeminovosPorCnpj.get(cnpj) ?? 0) + qtd,
+          (result.intranetSeminovosPorCnpj.get(cnpj) ?? 0) + 1,
         );
       } else {
-        result.unicoAutoNovosPorCnpj.set(
+        // Conforme regra: departamento vazio ou não-SEMINOV → Novos
+        result.intranetNovosPorCnpj.set(
           cnpj,
-          (result.unicoAutoNovosPorCnpj.get(cnpj) ?? 0) + qtd,
+          (result.intranetNovosPorCnpj.get(cnpj) ?? 0) + 1,
         );
       }
-    }
-  }
-
-  // ---- Power Curve por Segmento ----
-  const pcSegSheet = findSheet(wb, [
-    "Tab Dinamica PC Variável",
-    "Tab Dinamica PC Variavel",
-    "Tab Dinâmica PC Variável",
-    "Logon Power Curve",
-    "Power Curve",
-  ]);
-  if (!pcSegSheet) result.abasFaltando.push("Tab Dinâmica PC Variável (ou Logon Power Curve)");
-  else {
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[pcSegSheet], {
-      defval: null,
-    });
-    for (const r of rows) {
-      const seg = String(getCol(r, "Segmento", "Segmentação") ?? "");
-      const cnpj = normalizeCnpj(getCol(r, "CNPJ", "CGC"));
-      const qtd = toNumber(getCol(r, "Qtd", "Quantidade", "Consultas", "Total")) || 1;
-      if (isAuto(seg)) {
-        result.pcSegmentoTotais.auto += qtd;
-        if (cnpj) result.pcAutoPorCnpj.set(cnpj, (result.pcAutoPorCnpj.get(cnpj) ?? 0) + qtd);
-      } else if (isPesados(seg)) result.pcSegmentoTotais.pesados += qtd;
-      else if (isMotos(seg)) result.pcSegmentoTotais.motos += qtd;
-      else result.pcSegmentoTotais.outros += qtd;
     }
   }
 
