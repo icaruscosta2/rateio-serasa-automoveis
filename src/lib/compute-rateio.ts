@@ -73,7 +73,8 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     pcFixo: parsed.pcFixoGrupo * pct.pcFixo,
     pcAdicional: parsed.pcAdicionalGrupo * pct.pcAdicional,
     fi: parsed.fiGrupo * pct.fi,
-    adm: parsed.admRateadoGrupo * pct.adm,
+    // ADM Rateado (Rejane) vai 100% para Automóveis — ignora pct.adm.
+    adm: parsed.admRateadoGrupo,
   };
 
   // Pré-cálculos a partir da Intranet (linhas contadas por CNPJ)

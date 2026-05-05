@@ -10,6 +10,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import {
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Upload, ChevronRight, ChevronLeft, Check } from "lucide-react";
 import { toast } from "sonner";
 import { parseRateioWorkbook, type ParseResult } from "@/lib/parse-rateio";
@@ -32,6 +35,7 @@ interface CompanyRow {
   cnpj: string | null;
   cnpj_normalizado: string | null;
   is_matriz: boolean;
+  bandeira: string | null;
 }
 
 function NovoRateioPage() {
@@ -57,9 +61,10 @@ function NovoRateioPage() {
   useEffect(() => {
     supabase
       .from("companies")
-      .select("cod_empresa, nome, apelido, cnpj, cnpj_normalizado, is_matriz, tipo_negocio")
-      .neq("tipo_negocio", "AUTOS")
+      .select("cod_empresa, nome, apelido, cnpj, cnpj_normalizado, is_matriz, bandeira, tipo_negocio")
+      .eq("tipo_negocio", "AUTOS")
       .eq("ativo", true)
+      .order("bandeira")
       .order("nome")
       .then(({ data }) => {
         const rows = (data ?? []) as CompanyRow[];
@@ -304,47 +309,98 @@ function NovoRateioPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Empresa</TableHead>
-                  <TableHead>CNPJ</TableHead>
-                  <TableHead className="text-center w-28">Incluir</TableHead>
-                  <TableHead className="text-center w-28">Matriz</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {companies.map((c) => {
-                  const s = sel[c.cod_empresa] ?? { incluida: true, matriz: c.is_matriz };
-                  return (
-                    <TableRow key={c.cod_empresa}>
-                      <TableCell>
-                        <div>{c.nome}</div>
-                        <div className="text-xs text-muted-foreground">Cód {c.cod_empresa}</div>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">{c.cnpj}</TableCell>
-                      <TableCell className="text-center">
-                        <Checkbox
-                          checked={s.incluida}
-                          onCheckedChange={(v) =>
-                            setSel({ ...sel, [c.cod_empresa]: { ...s, incluida: !!v } })
-                          }
-                        />
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Checkbox
-                          checked={s.matriz}
-                          disabled={!s.incluida}
-                          onCheckedChange={(v) =>
-                            setSel({ ...sel, [c.cod_empresa]: { ...s, matriz: !!v } })
-                          }
-                        />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            {(() => {
+              const grupos = new Map<string, CompanyRow[]>();
+              for (const c of companies) {
+                const key = c.bandeira ?? "(sem bandeira)";
+                const arr = grupos.get(key) ?? [];
+                arr.push(c);
+                grupos.set(key, arr);
+              }
+              const bandeiras = Array.from(grupos.keys()).sort();
+              return (
+                <Accordion type="multiple" className="w-full">
+                  {bandeiras.map((b) => {
+                    const lojas = grupos.get(b)!;
+                    const incluidasCount = lojas.filter((c) => sel[c.cod_empresa]?.incluida).length;
+                    const allOn = incluidasCount === lojas.length;
+                    return (
+                      <AccordionItem key={b} value={b}>
+                        <AccordionTrigger className="hover:no-underline">
+                          <div className="flex items-center gap-3 flex-1">
+                            <span className="font-semibold">{b}</span>
+                            <Badge variant="secondary">
+                              {incluidasCount}/{lojas.length}
+                            </Badge>
+                            <button
+                              type="button"
+                              className="ml-auto mr-2 text-xs text-primary hover:underline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const next = { ...sel };
+                                lojas.forEach((c) => {
+                                  next[c.cod_empresa] = {
+                                    ...(next[c.cod_empresa] ?? { incluida: true, matriz: c.is_matriz }),
+                                    incluida: !allOn,
+                                  };
+                                });
+                                setSel(next);
+                              }}
+                            >
+                              {allOn ? "Desmarcar todas" : "Marcar todas"}
+                            </button>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Empresa</TableHead>
+                                <TableHead>CNPJ</TableHead>
+                                <TableHead className="text-center w-24">Incluir</TableHead>
+                                <TableHead className="text-center w-24">Matriz</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {lojas.map((c) => {
+                                const s = sel[c.cod_empresa] ?? { incluida: true, matriz: c.is_matriz };
+                                return (
+                                  <TableRow key={c.cod_empresa}>
+                                    <TableCell>
+                                      <div>{c.nome}</div>
+                                      <div className="text-xs text-muted-foreground">Cód {c.cod_empresa}</div>
+                                    </TableCell>
+                                    <TableCell className="font-mono text-xs">{c.cnpj}</TableCell>
+                                    <TableCell className="text-center">
+                                      <Checkbox
+                                        checked={s.incluida}
+                                        onCheckedChange={(v) =>
+                                          setSel({ ...sel, [c.cod_empresa]: { ...s, incluida: !!v } })
+                                        }
+                                      />
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <Checkbox
+                                        checked={s.matriz}
+                                        disabled={!s.incluida}
+                                        onCheckedChange={(v) =>
+                                          setSel({ ...sel, [c.cod_empresa]: { ...s, matriz: !!v } })
+                                        }
+                                      />
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </AccordionContent>
+                      </AccordionItem>
+                    );
+                  })}
+                </Accordion>
+              );
+            })()}
+
             <div className="flex justify-between mt-4">
               <Button variant="outline" onClick={() => setStep(1)}>
                 <ChevronLeft className="h-4 w-4" /> Voltar
