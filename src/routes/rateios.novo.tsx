@@ -228,7 +228,7 @@ function NovoRateioPage() {
           <CardHeader>
             <CardTitle>1. Mês e Upload</CardTitle>
             <CardDescription>
-              Envie a planilha mensal com as abas Demonstrativo, Logon Intranet, Único Auto e Power Curve por Segmento.
+              Envie a planilha mensal contendo as abas <strong>Demonstrativo</strong> e <strong>Intranet</strong>.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
