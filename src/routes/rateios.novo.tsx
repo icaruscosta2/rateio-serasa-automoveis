@@ -57,8 +57,8 @@ function NovoRateioPage() {
   useEffect(() => {
     supabase
       .from("companies")
-      .select("cod_empresa, nome, apelido, cnpj, cnpj_normalizado, is_matriz")
-      .eq("segmento", "AUTOMOVEIS")
+      .select("cod_empresa, nome, apelido, cnpj, cnpj_normalizado, is_matriz, tipo_negocio")
+      .neq("tipo_negocio", "AUTOS")
       .eq("ativo", true)
       .order("nome")
       .then(({ data }) => {
