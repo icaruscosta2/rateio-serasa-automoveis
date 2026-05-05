@@ -26,6 +26,7 @@ export interface RateioRow {
   qtdSeminovos: number;
   qtdIntranet: number;
   qtdPcSegmento: number;
+  qtdUnicoAuto: number;
   consumoMinimo: number;
   pcFixo: number;
   pcAdicional: number;
