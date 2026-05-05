@@ -16,6 +16,8 @@ export interface ParseResult {
   intranetPorCnpj: Map<string, number>;
   intranetNovosPorCnpj: Map<string, number>;
   intranetSeminovosPorCnpj: Map<string, number>;
+  // Único Auto — base oficial para o rateio do PC Adicional entre lojas auto
+  unicoAutoPorCnpj: Map<string, number>;
   // Diagnóstico
   abasEncontradas: string[];
   abasFaltando: string[];
