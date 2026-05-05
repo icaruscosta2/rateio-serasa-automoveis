@@ -32,6 +32,7 @@ interface CompanyRow {
   cnpj: string | null;
   cnpj_normalizado: string | null;
   is_matriz: boolean;
+  bandeira: string | null;
 }
 
 function NovoRateioPage() {
@@ -57,9 +58,10 @@ function NovoRateioPage() {
   useEffect(() => {
     supabase
       .from("companies")
-      .select("cod_empresa, nome, apelido, cnpj, cnpj_normalizado, is_matriz, tipo_negocio")
-      .neq("tipo_negocio", "AUTOS")
+      .select("cod_empresa, nome, apelido, cnpj, cnpj_normalizado, is_matriz, bandeira, tipo_negocio")
+      .eq("tipo_negocio", "AUTOS")
       .eq("ativo", true)
+      .order("bandeira")
       .order("nome")
       .then(({ data }) => {
         const rows = (data ?? []) as CompanyRow[];
