@@ -241,5 +241,23 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     }
   }
 
+  // ============= Único Auto (UNICOAUTO) =============
+  const unicoSheet = findSheet(wb, ["UNICOAUTO", "Unico Auto", "Único Auto"]);
+  if (!unicoSheet) {
+    result.warnings.push(
+      "Aba UNICOAUTO não encontrada — PC Adicional será rateado pela Intranet (fallback).",
+    );
+  } else {
+    const rows = sheetToRowsByHeader(wb.Sheets[unicoSheet], ["CNPJ", "Estabelecimento"]);
+    if (rows.length === 0) {
+      result.warnings.push("UNICOAUTO: cabeçalho 'CNPJ / Estabelecimento' não localizado.");
+    }
+    for (const r of rows) {
+      const cnpj = normalizeCnpj(get(r, "CNPJ"));
+      if (!cnpj) continue;
+      result.unicoAutoPorCnpj.set(cnpj, (result.unicoAutoPorCnpj.get(cnpj) ?? 0) + 1);
+    }
+  }
+
   return result;
 }
