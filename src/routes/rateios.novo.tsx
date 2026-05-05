@@ -362,30 +362,30 @@ function NovoRateioPage() {
           <CardHeader>
             <CardTitle>3. Percentuais e confirmação</CardTitle>
             <CardDescription>
-              Ajuste os % de Automóveis (regras do MONITORAMENTO) e gere o rateio.
+              Ajuste os % do grupo Automóveis para Consumo Mínimo (Monitoramento) e Power Curve Fixo. As demais rubricas são rateadas por contagem de consultas.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 gap-4 max-w-md">
               {(
                 [
-                  ["consumoMinimo", "Consumo Mínimo"],
-                  ["pcFixo", "PC Fixo"],
-                  ["pcAdicional", "PC Adicional"],
-                  ["fi", "F&I"],
-                  ["adm", "ADM"],
+                  ["consumoMinimo", "Consumo Mínimo (Monitoramento)"],
+                  ["pcFixo", "Power Curve Fixo"],
                 ] as const
               ).map(([k, label]) => (
                 <div key={k}>
                   <Label className="text-xs">{label}</Label>
                   <Input
                     type="number"
-                    step="0.01"
+                    step="0.001"
                     min="0"
                     max="1"
                     value={pct[k]}
                     onChange={(e) => setPct({ ...pct, [k]: Number(e.target.value) })}
                   />
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    {(pct[k] * 100).toFixed(1)}%
+                  </p>
                 </div>
               ))}
             </div>
