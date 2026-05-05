@@ -62,7 +62,6 @@ function NovoRateioPage() {
     supabase
       .from("companies")
       .select("cod_empresa, nome, apelido, cnpj, cnpj_normalizado, is_matriz, bandeira, tipo_negocio")
-      .neq("tipo_negocio", "CONTÁBIL")
       .eq("ativo", true)
       .order("bandeira")
       .order("nome")
