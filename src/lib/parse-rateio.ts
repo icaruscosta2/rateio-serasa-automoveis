@@ -262,5 +262,37 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     }
   }
 
+  // ============= Power Curve Variável =============
+  // Conta consultas por CNPJ. Cada linha = 1 consulta (usuário fez na PC Variável).
+  const pcvSheet = findSheet(wb, [
+    "Power Curve Variavel",
+    "Power Curve Variável",
+    "PowerCurve Variavel",
+    "PC Variavel",
+    "Variavel",
+  ]);
+  if (!pcvSheet) {
+    result.warnings.push(
+      "Aba 'Power Curve Variável' não encontrada — PC Adicional cairá em fallback (Único Auto / Intranet).",
+    );
+  } else {
+    // Tenta cabeçalhos comuns. Aceita "CNPJ" + ("subproduto" OU "user_id").
+    let rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["CNPJ", "subproduto"]);
+    if (rows.length === 0) {
+      rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["CNPJ", "user_id"]);
+    }
+    if (rows.length === 0) {
+      rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["CNPJ"]);
+    }
+    if (rows.length === 0) {
+      result.warnings.push("Power Curve Variável: cabeçalho 'CNPJ' não localizado.");
+    }
+    for (const r of rows) {
+      const cnpj = normalizeCnpj(get(r, "CNPJ"));
+      if (!cnpj) continue;
+      result.pcVariavelPorCnpj.set(cnpj, (result.pcVariavelPorCnpj.get(cnpj) ?? 0) + 1);
+    }
+  }
+
   return result;
 }
