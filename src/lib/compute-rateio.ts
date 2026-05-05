@@ -92,6 +92,52 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     0,
   );
 
+  // ===== F&I em 2 níveis: por segmento (Auto vs Pesados) e depois por empresa =====
+  // Nível 1: contar linhas da Intranet por segmento, classificando o CNPJ via nome da empresa.
+  const segmentoPorCnpj = new Map<string, "AUTOMOVEIS" | "PESADOS">();
+  for (const e of incluidas) {
+    if (!e.cnpj_normalizado) continue;
+    segmentoPorCnpj.set(e.cnpj_normalizado, classificarSegmento(e.nome));
+  }
+  let intranetSegAuto = 0;
+  let intranetSegPesados = 0;
+  for (const e of incluidas) {
+    const c = e.cnpj_normalizado;
+    if (!c) continue;
+    const q = parsed.intranetPorCnpj.get(c) ?? 0;
+    if (segmentoPorCnpj.get(c) === "PESADOS") intranetSegPesados += q;
+    else intranetSegAuto += q;
+  }
+  const totalIntranetSeg = intranetSegAuto + intranetSegPesados;
+  const fiFatiaAuto = totalIntranetSeg > 0 ? (fatia.fi * intranetSegAuto) / totalIntranetSeg : 0;
+  const fiFatiaPesados = totalIntranetSeg > 0 ? (fatia.fi * intranetSegPesados) / totalIntranetSeg : 0;
+
+  // Nível 2: dentro de cada segmento, distribuir entre empresas pelas contagens Novos/Seminovos.
+  const novosSegAuto = incluidas.reduce((s, e) => {
+    const c = e.cnpj_normalizado;
+    if (!c || segmentoPorCnpj.get(c) !== "AUTOMOVEIS") return s;
+    return s + (parsed.intranetNovosPorCnpj.get(c) ?? 0);
+  }, 0);
+  const semiSegAuto = incluidas.reduce((s, e) => {
+    const c = e.cnpj_normalizado;
+    if (!c || segmentoPorCnpj.get(c) !== "AUTOMOVEIS") return s;
+    return s + (parsed.intranetSeminovosPorCnpj.get(c) ?? 0);
+  }, 0);
+  const novosSegPesados = incluidas.reduce((s, e) => {
+    const c = e.cnpj_normalizado;
+    if (!c || segmentoPorCnpj.get(c) !== "PESADOS") return s;
+    return s + (parsed.intranetNovosPorCnpj.get(c) ?? 0);
+  }, 0);
+  const semiSegPesados = incluidas.reduce((s, e) => {
+    const c = e.cnpj_normalizado;
+    if (!c || segmentoPorCnpj.get(c) !== "PESADOS") return s;
+    return s + (parsed.intranetSeminovosPorCnpj.get(c) ?? 0);
+  }, 0);
+  // A fatia do segmento é dividida proporcionalmente ao TOTAL (novos+semi) do segmento;
+  // cada empresa recebe sua parte de Novos e Seminovos pelas suas próprias contagens.
+  const totalSegAuto = novosSegAuto + semiSegAuto;
+  const totalSegPesados = novosSegPesados + semiSegPesados;
+
   const rows: RateioRow[] = incluidas.map((e) => {
     const c = e.cnpj_normalizado ?? "";
     const qNovos = parsed.intranetNovosPorCnpj.get(c) ?? 0;
@@ -99,7 +145,8 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     const qIntra = parsed.intranetPorCnpj.get(c) ?? 0;
     const qUnico = parsed.unicoAutoPorCnpj.get(c) ?? 0;
     const qPcv = parsed.pcVariavelPorCnpj.get(c) ?? 0;
-    const qPc = qPcv; // base oficial: Power Curve Variável
+    const qPc = qPcv;
+    const seg = segmentoPorCnpj.get(c) ?? "AUTOMOVEIS";
 
     const consumoMinimo = e.is_matriz && matrizes.length > 0 ? fatia.consumoMinimo / matrizes.length : 0;
     const pcFixo = incluidas.length > 0 ? fatia.pcFixo / incluidas.length : 0;
@@ -112,9 +159,11 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
           : totalIntranet > 0
             ? (fatia.pcAdicional * qIntra) / totalIntranet
             : 0;
-    // F&I por CNPJ, separado em Novos e Seminovos pelas próprias contagens
-    const fiNovos = totalIntranet > 0 ? (fatia.fi * qNovos) / totalIntranet : 0;
-    const fiSeminovos = totalIntranet > 0 ? (fatia.fi * qSemi) / totalIntranet : 0;
+    // F&I: 2 níveis
+    const fatiaFi = seg === "PESADOS" ? fiFatiaPesados : fiFatiaAuto;
+    const totalSeg = seg === "PESADOS" ? totalSegPesados : totalSegAuto;
+    const fiNovos = totalSeg > 0 ? (fatiaFi * qNovos) / totalSeg : 0;
+    const fiSeminovos = totalSeg > 0 ? (fatiaFi * qSemi) / totalSeg : 0;
     const admRateado = totalIntranet > 0 ? (fatia.adm * qIntra) / totalIntranet : 0;
     const total = consumoMinimo + pcFixo + pcAdicional + fiNovos + fiSeminovos + admRateado;
     return {
