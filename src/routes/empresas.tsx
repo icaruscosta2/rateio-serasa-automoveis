@@ -145,9 +145,10 @@ function EmpresasPage() {
   };
 
   const toggleField = async (cod: number, field: "ativo" | "is_matriz", value: boolean) => {
+    const patch = field === "ativo" ? { ativo: value } : { is_matriz: value };
     const { error } = await supabase
       .from("companies")
-      .update({ [field]: value })
+      .update(patch)
       .eq("cod_empresa", cod);
     if (error) toast.error(error.message);
     else setRows((prev) => prev.map((r) => (r.cod_empresa === cod ? { ...r, [field]: value } : r)));

@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import { LogOut, Building2, FileSpreadsheet } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function AppLayout() {
+export function AppLayout({ children }: { children?: React.ReactNode } = {}) {
   const { user, loading } = useAuth();
   const nav = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -64,7 +64,7 @@ export function AppLayout() {
         </div>
       </aside>
       <main className="flex-1 p-8 overflow-auto">
-        <Outlet />
+        {children ?? <Outlet />}
       </main>
     </div>
   );
