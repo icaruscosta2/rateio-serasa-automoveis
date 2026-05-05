@@ -1,5 +1,20 @@
 import type { ParseResult } from "./parse-rateio";
 
+/**
+ * Classifica o segmento de uma empresa pelo nome.
+ * Heurística (extensível): se o nome contém termos de "pesados/diversos"
+ * (CAMINHÕES, MOTOS, MÁQUINAS, FAZENDA, PESADOS...) → "PESADOS";
+ * caso contrário → "AUTOMOVEIS".
+ */
+const PESADOS_KEYWORDS = ["CAMINH", "MOTO", "MAQUIN", "FAZEND", "PESADO", "TRATOR", "IMPLEMENT"];
+export function classificarSegmento(nome: string): "AUTOMOVEIS" | "PESADOS" {
+  const n = (nome ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+  return PESADOS_KEYWORDS.some((k) => n.includes(k)) ? "PESADOS" : "AUTOMOVEIS";
+}
+
 export interface RateioInput {
   parsed: ParseResult;
   empresas: Array<{
