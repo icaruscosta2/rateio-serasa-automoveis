@@ -258,17 +258,25 @@ function NovoRateioPage() {
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>Consumo Mínimo: <strong>{brl(parsed.consumoMinimoGrupo)}</strong></div>
                   <div>Power Curve Fixo: <strong>{brl(parsed.pcFixoGrupo)}</strong></div>
-                  <div>PC Crédito Total: <strong>{brl(parsed.pcCreditoTotalGrupo)}</strong></div>
-                  <div>F&I (Pefin PF/PJ): <strong>{brl(parsed.fiPefinPfPjGrupo)}</strong></div>
-                  <div>PC Adicional (PC Créd − F&I): <strong>{brl(parsed.pcAdicionalGrupo)}</strong></div>
+                  <div>PC Adicional (logon PC CREDITO): <strong>{brl(parsed.pcAdicionalGrupo)}</strong></div>
+                  <div>F&I / Cadastros: <strong>{brl(parsed.fiGrupo)}</strong></div>
                   <div>ADM Rateado (Rejane): <strong>{brl(parsed.admRateadoGrupo)}</strong></div>
+                  <div className="text-muted-foreground">Total grupo: <strong>{brl(parsed.consumoMinimoGrupo + parsed.pcFixoGrupo + parsed.pcAdicionalGrupo + parsed.fiGrupo + parsed.admRateadoGrupo)}</strong></div>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Power Curve por segmento — Auto: {intBR(parsed.pcSegmentoTotais.auto)} | Pesados: {intBR(parsed.pcSegmentoTotais.pesados)} | Motos: {intBR(parsed.pcSegmentoTotais.motos)}
+                  Demonstrativo — F&I PEFIN PF: {brl(parsed.demoFiPefinPf)} · F&I PEFIN PJ: {brl(parsed.demoFiPefinPj)} · Logon "PC CREDITO" total: {brl(parsed.demoTotalLogonPcCredito)}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Intranet: {parsed.intranetPorCnpj.size} CNPJs · Único Auto: {parsed.unicoAutoNovosPorCnpj.size + parsed.unicoAutoSeminovosPorCnpj.size} CNPJs
+                  Intranet: {parsed.intranetPorCnpj.size} CNPJs distintos · Novos: {parsed.intranetNovosPorCnpj.size} · Seminovos: {parsed.intranetSeminovosPorCnpj.size}
                 </div>
+                {parsed.warnings.length > 0 && (
+                  <ul className="text-xs text-amber-700 list-disc pl-5">
+                    {parsed.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                  </ul>
+                )}
+                {parsed.abasFaltando.length > 0 && (
+                  <p className="text-xs text-destructive">Abas faltando: {parsed.abasFaltando.join(", ")}</p>
+                )}
               </div>
             )}
 
