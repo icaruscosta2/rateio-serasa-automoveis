@@ -56,28 +56,22 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     consumoMinimo: parsed.consumoMinimoGrupo * pct.consumoMinimo,
     pcFixo: parsed.pcFixoGrupo * pct.pcFixo,
     pcAdicional: parsed.pcAdicionalGrupo * pct.pcAdicional,
-    fi: parsed.fiPefinPfPjGrupo * pct.fi,
+    fi: parsed.fiGrupo * pct.fi,
     adm: parsed.admRateadoGrupo * pct.adm,
   };
 
-  // Pré-cálculos
+  // Pré-cálculos a partir da Intranet (linhas contadas por CNPJ)
   const totalIntranet = incluidas.reduce(
     (s, e) => s + (e.cnpj_normalizado ? parsed.intranetPorCnpj.get(e.cnpj_normalizado) ?? 0 : 0),
     0,
   );
-  const totalUnicoAuto = incluidas.reduce((s, e) => {
-    const c = e.cnpj_normalizado ?? "";
-    return (
-      s + (parsed.unicoAutoNovosPorCnpj.get(c) ?? 0) + (parsed.unicoAutoSeminovosPorCnpj.get(c) ?? 0)
-    );
-  }, 0);
   const totalNovos = incluidas.reduce(
-    (s, e) => s + (e.cnpj_normalizado ? parsed.unicoAutoNovosPorCnpj.get(e.cnpj_normalizado) ?? 0 : 0),
+    (s, e) => s + (e.cnpj_normalizado ? parsed.intranetNovosPorCnpj.get(e.cnpj_normalizado) ?? 0 : 0),
     0,
   );
   const totalSeminovos = incluidas.reduce(
     (s, e) =>
-      s + (e.cnpj_normalizado ? parsed.unicoAutoSeminovosPorCnpj.get(e.cnpj_normalizado) ?? 0 : 0),
+      s + (e.cnpj_normalizado ? parsed.intranetSeminovosPorCnpj.get(e.cnpj_normalizado) ?? 0 : 0),
     0,
   );
 
@@ -86,17 +80,17 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
 
   const rows: RateioRow[] = incluidas.map((e) => {
     const c = e.cnpj_normalizado ?? "";
-    const qNovos = parsed.unicoAutoNovosPorCnpj.get(c) ?? 0;
-    const qSemi = parsed.unicoAutoSeminovosPorCnpj.get(c) ?? 0;
+    const qNovos = parsed.intranetNovosPorCnpj.get(c) ?? 0;
+    const qSemi = parsed.intranetSeminovosPorCnpj.get(c) ?? 0;
     const qIntra = parsed.intranetPorCnpj.get(c) ?? 0;
-    const qPc = qNovos + qSemi; // base Único Auto
+    const qPc = qIntra; // base provisória: Intranet (até receber base "Único Auto")
 
     const consumoMinimo = e.is_matriz && matrizes.length > 0 ? fatia.consumoMinimo / matrizes.length : 0;
     const pcFixo = incluidas.length > 0 ? fatia.pcFixo / incluidas.length : 0;
-    const pcAdicional = totalUnicoAuto > 0 ? (fatia.pcAdicional * qPc) / totalUnicoAuto : 0;
+    const pcAdicional = totalIntranet > 0 ? (fatia.pcAdicional * qIntra) / totalIntranet : 0;
     const fiTotalCnpj = totalIntranet > 0 ? (fatia.fi * qIntra) / totalIntranet : 0;
     const admRateado = totalIntranet > 0 ? (fatia.adm * qIntra) / totalIntranet : 0;
-    // split F&I em novos/seminovos pela proporção do Único Auto (geral)
+    // split F&I em novos/seminovos pela proporção da própria Intranet (geral)
     const fiNovos = fiTotalCnpj * propNovos;
     const fiSeminovos = fiTotalCnpj * propSeminovos;
     const total = consumoMinimo + pcFixo + pcAdicional + fiNovos + fiSeminovos + admRateado;
