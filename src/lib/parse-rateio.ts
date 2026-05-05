@@ -16,8 +16,10 @@ export interface ParseResult {
   intranetPorCnpj: Map<string, number>;
   intranetNovosPorCnpj: Map<string, number>;
   intranetSeminovosPorCnpj: Map<string, number>;
-  // Único Auto — base oficial para o rateio do PC Adicional entre lojas auto
+  // Único Auto — referência (mantida para diagnóstico)
   unicoAutoPorCnpj: Map<string, number>;
+  // Power Curve Variável — base oficial para rateio do PC Adicional (consultas por CNPJ)
+  pcVariavelPorCnpj: Map<string, number>;
   // Diagnóstico
   abasEncontradas: string[];
   abasFaltando: string[];
@@ -131,6 +133,7 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     intranetNovosPorCnpj: new Map(),
     intranetSeminovosPorCnpj: new Map(),
     unicoAutoPorCnpj: new Map(),
+    pcVariavelPorCnpj: new Map(),
     abasEncontradas: wb.SheetNames,
     abasFaltando: [],
     warnings: [],
@@ -256,6 +259,38 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
       const cnpj = normalizeCnpj(get(r, "CNPJ"));
       if (!cnpj) continue;
       result.unicoAutoPorCnpj.set(cnpj, (result.unicoAutoPorCnpj.get(cnpj) ?? 0) + 1);
+    }
+  }
+
+  // ============= Power Curve Variável =============
+  // Conta consultas por CNPJ. Cada linha = 1 consulta (usuário fez na PC Variável).
+  const pcvSheet = findSheet(wb, [
+    "Power Curve Variavel",
+    "Power Curve Variável",
+    "PowerCurve Variavel",
+    "PC Variavel",
+    "Variavel",
+  ]);
+  if (!pcvSheet) {
+    result.warnings.push(
+      "Aba 'Power Curve Variável' não encontrada — PC Adicional cairá em fallback (Único Auto / Intranet).",
+    );
+  } else {
+    // Tenta cabeçalhos comuns. Aceita "CNPJ" + ("subproduto" OU "user_id").
+    let rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["CNPJ", "subproduto"]);
+    if (rows.length === 0) {
+      rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["CNPJ", "user_id"]);
+    }
+    if (rows.length === 0) {
+      rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["CNPJ"]);
+    }
+    if (rows.length === 0) {
+      result.warnings.push("Power Curve Variável: cabeçalho 'CNPJ' não localizado.");
+    }
+    for (const r of rows) {
+      const cnpj = normalizeCnpj(get(r, "CNPJ"));
+      if (!cnpj) continue;
+      result.pcVariavelPorCnpj.set(cnpj, (result.pcVariavelPorCnpj.get(cnpj) ?? 0) + 1);
     }
   }
 
