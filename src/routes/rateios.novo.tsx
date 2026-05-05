@@ -143,9 +143,11 @@ function NovoRateioPage() {
           pct_auto_adm: pct.adm,
           arquivo_storage_path: storagePath,
           parse_summary: {
-            pcSegmentoTotais: parsed.pcSegmentoTotais,
-            pcCreditoTotalGrupo: parsed.pcCreditoTotalGrupo,
+            demoTotalLogonPcCredito: parsed.demoTotalLogonPcCredito,
+            demoFiPefinPf: parsed.demoFiPefinPf,
+            demoFiPefinPj: parsed.demoFiPefinPj,
             abasEncontradas: parsed.abasEncontradas,
+            warnings: parsed.warnings,
           },
         })
         .select()
