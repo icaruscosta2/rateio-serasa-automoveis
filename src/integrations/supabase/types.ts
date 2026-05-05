@@ -31,6 +31,7 @@ export type Database = {
           is_matriz: boolean
           nome: string
           segmento: string | null
+          tipo_negocio: string | null
           updated_at: string
         }
         Insert: {
@@ -49,6 +50,7 @@ export type Database = {
           is_matriz?: boolean
           nome: string
           segmento?: string | null
+          tipo_negocio?: string | null
           updated_at?: string
         }
         Update: {
@@ -67,6 +69,7 @@ export type Database = {
           is_matriz?: boolean
           nome?: string
           segmento?: string | null
+          tipo_negocio?: string | null
           updated_at?: string
         }
         Relationships: []
