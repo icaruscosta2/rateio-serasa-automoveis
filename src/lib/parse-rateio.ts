@@ -158,6 +158,7 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     demoTotalLogonPcCredito: 0,
     demoFiPefinPf: 0,
     demoFiPefinPj: 0,
+    demoOutrosUsuariosNaoSomado: 0,
     demoFiPefinPfPorLogon: [],
     demoFiPefinPjPorLogon: [],
     intranetPorCnpj: new Map(),
