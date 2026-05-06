@@ -6,12 +6,14 @@ export interface ParseResult {
   consumoMinimoGrupo: number;
   pcFixoGrupo: number;
   pcAdicionalGrupo: number; // logon "PC CREDITO" menos F&I PEFIN PF/PJ
-  fiGrupo: number; // PEFIN PF + PJ + linhas de outros usuários (exceto Rejane e PC CREDITO)
+  fiGrupo: number; // PEFIN PF + PJ (somente logon PC CREDITO)
   admRateadoGrupo: number; // linhas da REJANE
   // Diagnóstico do Demonstrativo
   demoTotalLogonPcCredito: number;
   demoFiPefinPf: number;
   demoFiPefinPj: number;
+  // Consultas avulsas de outros usuários (não somadas no fiGrupo — apenas registradas)
+  demoOutrosUsuariosNaoSomado: number;
   // Diagnóstico: detalhamento por logon das linhas que entraram em PEFIN PF/PJ
   demoFiPefinPfPorLogon: Array<{ logon: string; count: number; soma: number }>;
   demoFiPefinPjPorLogon: Array<{ logon: string; count: number; soma: number }>;
@@ -156,6 +158,7 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     demoTotalLogonPcCredito: 0,
     demoFiPefinPf: 0,
     demoFiPefinPj: 0,
+    demoOutrosUsuariosNaoSomado: 0,
     demoFiPefinPfPorLogon: [],
     demoFiPefinPjPorLogon: [],
     intranetPorCnpj: new Map(),
@@ -239,8 +242,8 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
         continue;
       }
 
-      // Outros usuários (não Rejane, não PC CREDITO) → F&I
-      result.fiGrupo += valor;
+      // Outros usuários (não Rejane, não PC CREDITO) → registrar mas NÃO somar no F&I
+      result.demoOutrosUsuariosNaoSomado += valor;
       outrosFi += valor;
     }
     result.demoFiPefinPfPorLogon = Array.from(pefinPfPorLogon.entries())
@@ -251,7 +254,7 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
       .sort((a, b) => b.soma - a.soma);
     if (outrosFi > 0) {
       result.warnings.push(
-        `F&I: somados R$ ${outrosFi.toFixed(2)} de consultas avulsas de outros usuários (não Rejane).`,
+        `Consultas avulsas de outros usuários (não somadas no F&I): R$ ${outrosFi.toFixed(2)}.`,
       );
     }
   }
