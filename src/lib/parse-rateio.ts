@@ -242,6 +242,12 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
       result.fiGrupo += valor;
       outrosFi += valor;
     }
+    result.demoFiPefinPfPorLogon = Array.from(pefinPfPorLogon.entries())
+      .map(([logon, v]) => ({ logon, count: v.count, soma: v.soma }))
+      .sort((a, b) => b.soma - a.soma);
+    result.demoFiPefinPjPorLogon = Array.from(pefinPjPorLogon.entries())
+      .map(([logon, v]) => ({ logon, count: v.count, soma: v.soma }))
+      .sort((a, b) => b.soma - a.soma);
     if (outrosFi > 0) {
       result.warnings.push(
         `F&I: somados R$ ${outrosFi.toFixed(2)} de consultas avulsas de outros usuários (não Rejane).`,
