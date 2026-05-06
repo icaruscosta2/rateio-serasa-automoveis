@@ -12,6 +12,9 @@ export interface ParseResult {
   demoTotalLogonPcCredito: number;
   demoFiPefinPf: number;
   demoFiPefinPj: number;
+  // Diagnóstico: detalhamento por logon das linhas que entraram em PEFIN PF/PJ
+  demoFiPefinPfPorLogon: Array<{ logon: string; count: number; soma: number }>;
+  demoFiPefinPjPorLogon: Array<{ logon: string; count: number; soma: number }>;
   // Contagens por CNPJ normalizado (a partir da Intranet)
   intranetPorCnpj: Map<string, number>;
   intranetNovosPorCnpj: Map<string, number>;
@@ -153,6 +156,8 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     demoTotalLogonPcCredito: 0,
     demoFiPefinPf: 0,
     demoFiPefinPj: 0,
+    demoFiPefinPfPorLogon: [],
+    demoFiPefinPjPorLogon: [],
     intranetPorCnpj: new Map(),
     intranetNovosPorCnpj: new Map(),
     intranetSeminovosPorCnpj: new Map(),
@@ -181,6 +186,8 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
       );
     }
     let outrosFi = 0;
+    const pefinPfPorLogon = new Map<string, { count: number; soma: number }>();
+    const pefinPjPorLogon = new Map<string, { count: number; soma: number }>();
     for (const r of rows) {
       const produto = norm(String(get(r, "Descrição de Produto NF") ?? ""));
       const nomeLogon = norm(String(get(r, "Nome do Logon") ?? ""));
@@ -211,7 +218,14 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
       // F&I PEFIN PF / PJ (tanto sob "PC CREDITO" quanto outros usuários)
       if (isFiProduto) {
         result.fiGrupo += valor;
-        if (produto === norm(FI_PRODUTOS[0])) result.demoFiPefinPf += valor;
+        const isPf = produto === norm(FI_PRODUTOS[0]);
+        const bucket = isPf ? pefinPfPorLogon : pefinPjPorLogon;
+        const logonKey = nomeLogon || "(sem logon)";
+        const cur = bucket.get(logonKey) ?? { count: 0, soma: 0 };
+        cur.count += 1;
+        cur.soma += valor;
+        bucket.set(logonKey, cur);
+        if (isPf) result.demoFiPefinPf += valor;
         else result.demoFiPefinPj += valor;
         if (isLogonPcCredito) result.demoTotalLogonPcCredito += valor;
         continue;
@@ -228,6 +242,12 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
       result.fiGrupo += valor;
       outrosFi += valor;
     }
+    result.demoFiPefinPfPorLogon = Array.from(pefinPfPorLogon.entries())
+      .map(([logon, v]) => ({ logon, count: v.count, soma: v.soma }))
+      .sort((a, b) => b.soma - a.soma);
+    result.demoFiPefinPjPorLogon = Array.from(pefinPjPorLogon.entries())
+      .map(([logon, v]) => ({ logon, count: v.count, soma: v.soma }))
+      .sort((a, b) => b.soma - a.soma);
     if (outrosFi > 0) {
       result.warnings.push(
         `F&I: somados R$ ${outrosFi.toFixed(2)} de consultas avulsas de outros usuários (não Rejane).`,
