@@ -55,12 +55,21 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
   const incluidas = empresas.filter((e) => e.incluida);
   const matrizes = incluidas.filter((e) => e.is_matriz);
 
-  // Fatias Auto (R$). Para F&I, NÃO há percentual fixo: a fatia de cada
-  // segmento é a própria proporção de linhas Intranet (ver abaixo).
+  // Fatias Auto (R$).
+  // PC Adicional: a parcela que vai para Automóveis é proporção das linhas
+  // filtradas (Automóveis + Consulta PF allowlist) sobre o TOTAL de linhas
+  // da aba Power Curve Variável. Ex.: 250/476 = 52,52%.
+  const pcvShareAuto =
+    parsed.pcVariavelTotalLinhas > 0
+      ? parsed.pcVariavelLinhasAuto / parsed.pcVariavelTotalLinhas
+      : 0;
   const fatia = {
     consumoMinimo: parsed.consumoMinimoGrupo * pct.consumoMinimo,
     pcFixo: parsed.pcFixoGrupo * pct.pcFixo,
-    pcAdicional: parsed.pcAdicionalGrupo, // 100% rateado entre Automóveis pela PCV filtrada
+    pcAdicional:
+      parsed.pcVariavelTotalLinhas > 0
+        ? parsed.pcAdicionalGrupo * pcvShareAuto
+        : parsed.pcAdicionalGrupo, // sem PCV → fallback: tudo para Auto
     fi: parsed.fiGrupo, // total do grupo; será dividido por proporção de Intranet
     // ADM Rateado (Rejane) vai 100% para Automóveis
     adm: parsed.admRateadoGrupo,
