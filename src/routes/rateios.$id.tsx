@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 import { AppLayout } from "@/components/AppLayout";
@@ -8,9 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ChevronLeft, Download } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { ChevronLeft, Download, Trash2 } from "lucide-react";
 import { brl } from "@/lib/format";
 import { formatCnpj } from "@/lib/cnpj";
+import { deleteRateio } from "@/lib/delete-rateio";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/rateios/$id")({
