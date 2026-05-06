@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { parseRateioWorkbook, type ParseResult } from "@/lib/parse-rateio";
 import { brl, intBR } from "@/lib/format";
 import { computeRateio } from "@/lib/compute-rateio";
+import { isBandeiraExcluida } from "@/lib/segmentos";
 import { Badge } from "@/components/ui/badge";
 
 export const Route = createFileRoute("/rateios/novo")({
