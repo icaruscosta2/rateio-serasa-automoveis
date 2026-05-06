@@ -297,16 +297,17 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
       "Aba 'Power Curve Variável' não encontrada — PC Adicional cairá em fallback (Único Auto / Intranet).",
     );
   } else {
-    // Aceita cabeçalhos com "CNPJ" + "subproduto2" + "user_id".
-    let rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["CNPJ", "subproduto2", "user_id"]);
+    // Cabeçalho real da PCV: subproduto2, user_id, tipo_doc, doc, ...
+    // (NÃO existe coluna "CNPJ" nesta aba — o documento vem em "doc",
+    // e o tipo é indicado em "tipo_doc".)
+    let rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["subproduto2", "user_id"]);
     if (rows.length === 0) {
-      rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["CNPJ", "subproduto2"]);
+      rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["subproduto2"]);
     }
     if (rows.length === 0) {
-      rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["CNPJ"]);
-    }
-    if (rows.length === 0) {
-      result.warnings.push("Power Curve Variável: cabeçalho 'CNPJ' não localizado.");
+      result.warnings.push(
+        "Power Curve Variável: cabeçalho 'subproduto2' não localizado.",
+      );
     }
     // Filtro: subproduto2 = "Automóveis" OU
     //        (subproduto2 = "Consulta PF" E user_id ∈ allowlist)
@@ -322,10 +323,9 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     let userPreenchido = 0;
     for (const r of rows) {
       pcvTotal++;
-      const cnpj = normalizeCnpj(get(r, "CNPJ"));
       const sub2Raw = String(getLoose(r, "subproduto2", "sub produto 2", "subproduto 2") ?? "");
       const sub2 = norm(sub2Raw);
-      const user = String(getLoose(r, "user_id", "userid", "usuario", "user") ?? "")
+      const user = String(getLoose(r, "user_id", "userid", "usuario") ?? "")
         .trim()
         .toLowerCase();
       if (sub2Raw.trim()) sub2Counts.set(sub2Raw.trim(), (sub2Counts.get(sub2Raw.trim()) ?? 0) + 1);
@@ -340,10 +340,6 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
       }
       if (isAuto) pcvAuto++;
       else pcvPf++;
-      // Não indexamos por CNPJ: o CNPJ desta aba é do CLIENTE da consulta,
-      // não da concessionária. A distribuição entre lojas é feita por Único
-      // Auto (ou fallback Intranet), não pela PCV.
-      void cnpj;
     }
     result.pcVariavelTotalLinhas = pcvTotal;
     result.pcVariavelLinhasAuto = pcvAuto + pcvPf;
@@ -351,12 +347,11 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     result.warnings.push(
       `Power Curve Variável: ${pcvAuto + pcvPf}/${pcvTotal} linhas para Automóveis (${pctAuto.toFixed(2)}%) — ${pcvAuto} Automóveis + ${pcvPf} Consulta PF (Aleff/Ana); ${pcvDescartadas} descartadas.`,
     );
-    // Diagnóstico extra quando o filtro descarta tudo (ou quase tudo)
     if (pcvTotal > 0 && pcvAuto + pcvPf === 0) {
       const colsDetectadas = rows[0] ? Object.keys(rows[0]).join(" | ") : "(nenhuma)";
       const topSub2 = Array.from(sub2Counts.entries())
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 3)
+        .slice(0, 5)
         .map(([v, c]) => `"${v}" (${c})`)
         .join(", ") || "(coluna subproduto2 vazia em todas as linhas)";
       result.warnings.push(
