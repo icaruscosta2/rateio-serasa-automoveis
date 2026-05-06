@@ -60,7 +60,7 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
   const fatia = {
     consumoMinimo: parsed.consumoMinimoGrupo * pct.consumoMinimo,
     pcFixo: parsed.pcFixoGrupo * pct.pcFixo,
-    pcAdicional: parsed.pcAdicionalGrupo * pct.pcAdicional,
+    pcAdicional: parsed.pcAdicionalGrupo, // 100% rateado entre Automóveis pela PCV filtrada
     fi: parsed.fiGrupo, // total do grupo; será dividido por proporção de Intranet
     // ADM Rateado (Rejane) vai 100% para Automóveis
     adm: parsed.admRateadoGrupo,
