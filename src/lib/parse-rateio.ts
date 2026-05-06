@@ -140,6 +140,8 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     intranetSeminovosPorCnpj: new Map(),
     unicoAutoPorCnpj: new Map(),
     pcVariavelPorCnpj: new Map(),
+    pcVariavelTotalLinhas: 0,
+    pcVariavelLinhasAuto: 0,
     abasEncontradas: wb.SheetNames,
     abasFaltando: [],
     warnings: [],
