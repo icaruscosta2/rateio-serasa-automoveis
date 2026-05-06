@@ -49,6 +49,11 @@ export interface RateioOutput {
     fi: number;
     adm: number;
   };
+  // Diagnóstico: fatia F&I por segmento e a proporção Intranet usada.
+  fiPorSegmento: Record<string, number>;
+  intranetUniversoPorSegmento: Record<string, number>;
+  intranetUniversoTotal: number;
+  pcvShareAuto: number; // ex.: 250/476
 }
 
 export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOutput {
