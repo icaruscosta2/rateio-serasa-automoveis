@@ -276,10 +276,10 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
       "Aba 'Power Curve Variável' não encontrada — PC Adicional cairá em fallback (Único Auto / Intranet).",
     );
   } else {
-    // Tenta cabeçalhos comuns. Aceita "CNPJ" + ("subproduto" OU "user_id").
-    let rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["CNPJ", "subproduto"]);
+    // Aceita cabeçalhos com "CNPJ" + "subproduto2" + "user_id".
+    let rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["CNPJ", "subproduto2", "user_id"]);
     if (rows.length === 0) {
-      rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["CNPJ", "user_id"]);
+      rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["CNPJ", "subproduto2"]);
     }
     if (rows.length === 0) {
       rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["CNPJ"]);
@@ -287,11 +287,35 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     if (rows.length === 0) {
       result.warnings.push("Power Curve Variável: cabeçalho 'CNPJ' não localizado.");
     }
+    // Filtro: subproduto2 = "Automóveis" OU
+    //        (subproduto2 = "Consulta PF" E user_id ∈ allowlist)
+    const PCV_USERS_PF = new Set([
+      "aleff.cordeiro@revemar.com.br",
+      "ana.vitoria@revemar.com.br",
+    ].map((s) => s.toLowerCase()));
+    let pcvAuto = 0;
+    let pcvPf = 0;
+    let pcvDescartadas = 0;
     for (const r of rows) {
       const cnpj = normalizeCnpj(get(r, "CNPJ"));
       if (!cnpj) continue;
+      const sub2 = norm(String(get(r, "subproduto2") ?? ""));
+      const user = String(get(r, "user_id") ?? "").trim().toLowerCase();
+      const isAuto = sub2 === norm("Automóveis") || sub2 === norm("Automoveis");
+      const isPfPermitido =
+        (sub2 === norm("Consulta PF") || sub2.includes("CONSULTA PF")) &&
+        PCV_USERS_PF.has(user);
+      if (!isAuto && !isPfPermitido) {
+        pcvDescartadas++;
+        continue;
+      }
+      if (isAuto) pcvAuto++;
+      else pcvPf++;
       result.pcVariavelPorCnpj.set(cnpj, (result.pcVariavelPorCnpj.get(cnpj) ?? 0) + 1);
     }
+    result.warnings.push(
+      `Power Curve Variável: ${pcvAuto} Automóveis + ${pcvPf} Consulta PF (Aleff/Ana) = ${pcvAuto + pcvPf} consultas; ${pcvDescartadas} descartadas.`,
+    );
   }
 
   return result;
