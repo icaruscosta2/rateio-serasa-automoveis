@@ -136,9 +136,14 @@ function RateioDetailPage() {
             })}
           </h1>
         </div>
-        <Button onClick={exportXlsx}>
-          <Download className="h-4 w-4" /> Exportar XLSX
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={exportXlsx}>
+            <Download className="h-4 w-4" /> Exportar XLSX
+          </Button>
+          <Button variant="destructive" onClick={() => setConfirmOpen(true)}>
+            <Trash2 className="h-4 w-4" /> Excluir
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-5 gap-3">
