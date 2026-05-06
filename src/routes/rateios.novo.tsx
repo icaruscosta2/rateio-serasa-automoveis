@@ -37,6 +37,7 @@ interface CompanyRow {
   cnpj_normalizado: string | null;
   is_matriz: boolean;
   bandeira: string | null;
+  tipo_negocio: string | null;
 }
 
 function NovoRateioPage() {
