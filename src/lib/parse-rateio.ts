@@ -318,11 +318,18 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     let pcvPf = 0;
     let pcvDescartadas = 0;
     let pcvTotal = 0;
+    const sub2Counts = new Map<string, number>();
+    let userPreenchido = 0;
     for (const r of rows) {
       pcvTotal++;
       const cnpj = normalizeCnpj(get(r, "CNPJ"));
-      const sub2 = norm(String(get(r, "subproduto2") ?? ""));
-      const user = String(get(r, "user_id") ?? "").trim().toLowerCase();
+      const sub2Raw = String(getLoose(r, "subproduto2", "sub produto 2", "subproduto 2") ?? "");
+      const sub2 = norm(sub2Raw);
+      const user = String(getLoose(r, "user_id", "userid", "usuario", "user") ?? "")
+        .trim()
+        .toLowerCase();
+      if (sub2Raw.trim()) sub2Counts.set(sub2Raw.trim(), (sub2Counts.get(sub2Raw.trim()) ?? 0) + 1);
+      if (user) userPreenchido++;
       const isAuto = sub2 === norm("Automóveis") || sub2 === norm("Automoveis");
       const isPfPermitido =
         (sub2 === norm("Consulta PF") || sub2.includes("CONSULTA PF")) &&
@@ -344,6 +351,18 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     result.warnings.push(
       `Power Curve Variável: ${pcvAuto + pcvPf}/${pcvTotal} linhas para Automóveis (${pctAuto.toFixed(2)}%) — ${pcvAuto} Automóveis + ${pcvPf} Consulta PF (Aleff/Ana); ${pcvDescartadas} descartadas.`,
     );
+    // Diagnóstico extra quando o filtro descarta tudo (ou quase tudo)
+    if (pcvTotal > 0 && pcvAuto + pcvPf === 0) {
+      const colsDetectadas = rows[0] ? Object.keys(rows[0]).join(" | ") : "(nenhuma)";
+      const topSub2 = Array.from(sub2Counts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([v, c]) => `"${v}" (${c})`)
+        .join(", ") || "(coluna subproduto2 vazia em todas as linhas)";
+      result.warnings.push(
+        `Power Curve Variável — diagnóstico: colunas detectadas: ${colsDetectadas}. Top valores de subproduto2: ${topSub2}. Linhas com user_id preenchido: ${userPreenchido}.`,
+      );
+    }
   }
 
   return result;
