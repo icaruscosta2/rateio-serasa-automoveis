@@ -215,8 +215,9 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
         continue;
       }
 
-      // F&I PEFIN PF / PJ (tanto sob "PC CREDITO" quanto outros usuários)
-      if (isFiProduto) {
+      // F&I PEFIN PF / PJ — somente quando logon for "PC CREDITO".
+      // Linhas PEFIN PF/PJ de outros logons caem no bloco "outros usuários" abaixo.
+      if (isFiProduto && isLogonPcCredito) {
         result.fiGrupo += valor;
         const isPf = produto === norm(FI_PRODUTOS[0]);
         const bucket = isPf ? pefinPfPorLogon : pefinPjPorLogon;
@@ -227,7 +228,7 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
         bucket.set(logonKey, cur);
         if (isPf) result.demoFiPefinPf += valor;
         else result.demoFiPefinPj += valor;
-        if (isLogonPcCredito) result.demoTotalLogonPcCredito += valor;
+        result.demoTotalLogonPcCredito += valor;
         continue;
       }
 
