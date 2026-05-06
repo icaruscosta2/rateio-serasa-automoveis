@@ -135,15 +135,15 @@ function RateioDetailPage() {
 
       <div className="grid grid-cols-5 gap-3">
         {[
-          ["Consumo Mín.", meta.consumo_minimo_grupo],
-          ["PC Fixo", meta.pc_fixo_grupo],
-          ["PC Adicional", meta.pc_adicional_grupo],
-          ["F&I (PEFIN PF/PJ)", meta.fi_intranet_grupo],
-          ["ADM Rateado", meta.adm_rateado_grupo],
+          ["Consumo Mín.", totals.consumo_minimo],
+          ["PC Fixo", totals.pc_fixo],
+          ["PC Adicional", totals.pc_adicional],
+          ["F&I (PEFIN PF/PJ)", totals.fi_novos + totals.fi_seminovos],
+          ["ADM Rateado", totals.adm_rateado],
         ].map(([label, v]) => (
           <Card key={label as string}>
             <CardHeader className="pb-2">
-              <CardDescription className="text-xs">{label as string} (grupo)</CardDescription>
+              <CardDescription className="text-xs">{label as string}</CardDescription>
               <CardTitle className="text-lg">{brl(Number(v))}</CardTitle>
             </CardHeader>
           </Card>
