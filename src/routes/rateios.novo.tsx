@@ -56,7 +56,7 @@ function NovoRateioPage() {
   const [sel, setSel] = useState<Record<number, { incluida: boolean; matriz: boolean }>>({});
 
   const [pct, setPct] = useState({
-    consumoMinimo: 0.56, pcFixo: 0.667, pcAdicional: 0.56, fi: 0.56, adm: 0.56,
+    consumoMinimo: 0.56, pcFixo: 2 / 3, pcAdicional: 0.56, fi: 0.56, adm: 0.56,
   });
   const [saving, setSaving] = useState(false);
 
@@ -306,6 +306,22 @@ function NovoRateioPage() {
                 <div className="text-xs text-muted-foreground">
                   Demonstrativo — F&I PEFIN PF: {brl(parsed.demoFiPefinPf)} · F&I PEFIN PJ: {brl(parsed.demoFiPefinPj)} · Logon "PC CREDITO" total: {brl(parsed.demoTotalLogonPcCredito)}
                 </div>
+                {parsed.demoFiPefinPfPorLogon.length > 0 && (
+                  <div className="text-[11px] text-muted-foreground">
+                    PEFIN PF por logon:{" "}
+                    {parsed.demoFiPefinPfPorLogon
+                      .map((l) => `${l.logon} (${l.count}, ${brl(l.soma)})`)
+                      .join(" · ")}
+                  </div>
+                )}
+                {parsed.demoFiPefinPjPorLogon.length > 0 && (
+                  <div className="text-[11px] text-muted-foreground">
+                    PEFIN PJ por logon:{" "}
+                    {parsed.demoFiPefinPjPorLogon
+                      .map((l) => `${l.logon} (${l.count}, ${brl(l.soma)})`)
+                      .join(" · ")}
+                  </div>
+                )}
                 <div className="text-xs text-muted-foreground">
                   Intranet: {parsed.intranetPorCnpj.size} CNPJs distintos · Novos: {parsed.intranetNovosPorCnpj.size} · Seminovos: {parsed.intranetSeminovosPorCnpj.size}
                 </div>
@@ -471,14 +487,14 @@ function NovoRateioPage() {
                   <Label className="text-xs">{label}</Label>
                   <Input
                     type="number"
-                    step="0.001"
+                    step="0.00000001"
                     min="0"
                     max="1"
                     value={pct[k]}
                     onChange={(e) => setPct({ ...pct, [k]: Number(e.target.value) })}
                   />
                   <p className="text-[10px] text-muted-foreground mt-1">
-                    {(pct[k] * 100).toFixed(1)}%
+                    {(pct[k] * 100).toFixed(4)}%
                   </p>
                 </div>
               ))}
