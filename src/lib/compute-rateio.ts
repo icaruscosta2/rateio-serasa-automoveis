@@ -149,20 +149,25 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     }
   }
   let intranetUniverso = 0;
+  const intranetUniversoPorSegMap = new Map<Segmento, number>();
   for (const e of empresas) {
     const seg = segmentoDaBandeira(e.bandeira);
     if (!seg) continue;
     const c = e.cnpj_normalizado;
     if (!c || ownerByCnpjAll.get(c) !== e.cod_empresa) continue;
-    intranetUniverso += parsed.intranetPorCnpj.get(c) ?? 0;
+    const q = parsed.intranetPorCnpj.get(c) ?? 0;
+    intranetUniverso += q;
+    intranetUniversoPorSegMap.set(seg, (intranetUniversoPorSegMap.get(seg) ?? 0) + q);
   }
 
-  // Fatia F&I por segmento incluído, proporcional ao denominador universo.
+  // Fatia F&I por segmento (usa universo como base — desmarcar uma loja
+  // não migra valor entre segmentos; e a fatia "Auto" para a prévia é
+  // proporcional à Intranet do segmento Auto sobre o universo).
   const fiFatiaPorSeg = new Map<Segmento, number>();
-  for (const [seg, q] of intranetPorSeg) {
+  for (const [seg, qUniv] of intranetUniversoPorSegMap) {
     fiFatiaPorSeg.set(
       seg,
-      intranetUniverso > 0 ? (fatia.fi * q) / intranetUniverso : 0,
+      intranetUniverso > 0 ? (fatia.fi * qUniv) / intranetUniverso : 0,
     );
   }
 
