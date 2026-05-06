@@ -163,26 +163,25 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
 
   // ===== Bases globais para PC Adicional / ADM =====
   // (somam só os "donos" de CNPJ — já dedupado — e ignoram excluídas)
-  let totalIntranetAuto = 0; // para ADM (100% Auto)
+  // IMPORTANTE: a aba Power Curve Variável NÃO é usada como base de
+  // distribuição (o CNPJ daquela aba é do cliente, não da concessionária).
+  // A fração Auto da PCV já foi aplicada acima em fatia.pcAdicional.
+  let totalIntranetAuto = 0; // para ADM (100% Auto) e fallback do PC Adicional
   let totalUnicoAuto = 0;
-  let totalPcVar = 0;
   for (const e of incluidas) {
     const seg = segPorEmpresa.get(e.cod_empresa);
     if (!seg) continue;
-    if (seg === "AUTOMOVEIS") totalIntranetAuto += qtd(parsed.intranetPorCnpj, e);
-    totalUnicoAuto += qtd(parsed.unicoAutoPorCnpj, e);
-    totalPcVar += qtd(parsed.pcVariavelPorCnpj, e);
+    if (seg === "AUTOMOVEIS") {
+      totalIntranetAuto += qtd(parsed.intranetPorCnpj, e);
+      totalUnicoAuto += qtd(parsed.unicoAutoPorCnpj, e);
+    }
   }
 
-  // PC Adicional só vai pra empresas AUTOMOVEIS (mantém comportamento atual via fallback).
-  // Se há PCV → usa PCV; senão Único Auto; senão Intranet.
-  // Aplicamos sobre AUTOMOVEIS apenas.
+  // PC Adicional só vai pra empresas AUTOMOVEIS.
+  // Base preferencial: Único Auto (CNPJ de concessionária). Fallback: Intranet Auto.
   let totalPcAdicionalBase = 0;
-  let pcAdicionalSource: "pcv" | "unico" | "intranet" = "intranet";
-  if (totalPcVar > 0) {
-    totalPcAdicionalBase = totalPcVar;
-    pcAdicionalSource = "pcv";
-  } else if (totalUnicoAuto > 0) {
+  let pcAdicionalSource: "unico" | "intranet" = "intranet";
+  if (totalUnicoAuto > 0) {
     totalPcAdicionalBase = totalUnicoAuto;
     pcAdicionalSource = "unico";
   } else {
@@ -201,7 +200,7 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     const qSemi = qtd(parsed.intranetSeminovosPorCnpj, e);
     const qIntra = qtd(parsed.intranetPorCnpj, e);
     const qUnico = qtd(parsed.unicoAutoPorCnpj, e);
-    const qPcv = qtd(parsed.pcVariavelPorCnpj, e);
+    // qPcv: PCV não é base de distribuição (CNPJ é do cliente). Sempre 0.
 
     const consumoMinimo =
       seg && e.is_matriz && matrizes.length > 0 ? fatia.consumoMinimo / matrizes.length : 0;
@@ -210,8 +209,7 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     // PC Adicional: só Automóveis recebe.
     let pcAdicional = 0;
     if (seg === "AUTOMOVEIS" && totalPcAdicionalBase > 0) {
-      const q =
-        pcAdicionalSource === "pcv" ? qPcv : pcAdicionalSource === "unico" ? qUnico : qIntra;
+      const q = pcAdicionalSource === "unico" ? qUnico : qIntra;
       pcAdicional = (fatia.pcAdicional * q) / totalPcAdicionalBase;
     }
 
@@ -242,7 +240,7 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
       qtdNovos: qNovos,
       qtdSeminovos: qSemi,
       qtdIntranet: qIntra,
-      qtdPcSegmento: qPcv,
+      qtdPcSegmento: 0,
       qtdUnicoAuto: qUnico,
       consumoMinimo,
       pcFixo,
