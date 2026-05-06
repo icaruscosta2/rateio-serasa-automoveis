@@ -125,14 +125,19 @@ function get(row: Record<string, unknown>, name: string): unknown {
 }
 
 /** Match tolerante: ignora espaços, underscores, hífens e pontuação.
- *  Aceita igualdade ou inclusão. Use para colunas com nomes voláteis. */
+ *  Tenta IGUALDADE primeiro (mais seguro); só usa inclusão se nenhuma chave
+ *  bater exatamente — assim "produto" não casa com "subproduto2". */
 function getLoose(row: Record<string, unknown>, ...candidates: string[]): unknown {
   const strip = (s: string) => norm(s).replace(/[^A-Z0-9]/g, "");
   const targets = candidates.map(strip).filter(Boolean);
-  for (const k of Object.keys(row)) {
+  const keys = Object.keys(row);
+  for (const k of keys) {
     const ks = strip(k);
-    if (!ks) continue;
-    if (targets.some((t) => ks === t || ks.includes(t) || t.includes(ks))) return row[k];
+    if (ks && targets.some((t) => ks === t)) return row[k];
+  }
+  for (const k of keys) {
+    const ks = strip(k);
+    if (ks && targets.some((t) => ks.includes(t) || t.includes(ks))) return row[k];
   }
   return null;
 }
