@@ -1,53 +1,49 @@
-## Problema
+## Diagnóstico
 
-Na etapa 3 do Novo Rateio, o **PC Adicional** zera para todas as lojas do segmento Automóveis.
+Na aba **Power Curve Variável**:
+- O parser leu as 476 linhas (Y=476 ✓), mas o filtro descartou todas (X=0).
+- Como você confirmou antes que dava 250/476, e a única mudança é que "a tabela começa em uma coluna mais à frente", o problema mais provável é que o cabeçalho da coluna `subproduto2` (ou `user_id`) tem variação de nome que o matching exato (`norm()`) não está reconhecendo. Exemplos plausíveis: `Sub Produto 2`, `SUBPRODUTO 2`, `subproduto_2`, `sub_produto2`.
 
-**Causa**: a aba `Power Curve Variável` contém CNPJs de **clientes finais** (quem fez a consulta), não CNPJs das concessionárias. Hoje o `compute-rateio.ts` calcula corretamente a fração (ex.: 250/476 = 52,52%), mas tenta distribuir essa fatia entre lojas usando `pcVariavelPorCnpj[cnpjDaLoja]`, que é praticamente sempre 0 → `pcAdicional ≈ 0` para todas.
+Quando isso acontece:
+- `sheetToRowsByHeader(["CNPJ"])` (terceiro fallback) ainda lê 476 linhas.
+- `get(r, "subproduto2")` retorna `null` em todas porque procura match exato.
+- Todas viram "descartadas" → 0/476 = 0,00%.
 
-## Regra correta (confirmada)
+## Correção
 
-- **Power Curve Variável**: usada **somente** para calcular a fração do segmento Automóveis, via `subproduto2` + `user_id` allowlist. **Nunca** indexar por CNPJ.
-- **Distribuição entre lojas do segmento Automóveis**: feita pela aba **Único Auto** (`unicoAutoPorCnpj`), que tem CNPJ de concessionária. Fallback: `intranetPorCnpj` das lojas do segmento Automóveis.
-- A fração 250/476 é calculada no parse e **não muda** quando o usuário desmarca lojas na seleção. Sempre prossegue com 100% da amostra (476 no denominador).
+### 1) `src/lib/parse-rateio.ts` — leitura tolerante das colunas da PCV
 
-## Passo a passo final na aba Power Curve Variável (parse)
+Adicionar uma função auxiliar `getLoose(row, ...candidates)` que compara nomes de coluna **ignorando espaços, underscores, hífens e pontuação** (só letras/números). E aceitar variações conhecidas.
 
-1. Localizar a aba (busca tolerante: `Power Curve Variavel`, `Power Curve Variável`, etc.).
-2. Localizar o cabeçalho nas primeiras 30 linhas: `CNPJ` + `subproduto2` + `user_id` (com fallbacks).
-3. Para cada linha de dados:
-   - `pcvTotal++` (conta TODAS as linhas, sem filtro).
-   - Lê `subproduto2` (normalizado) e `user_id` (lowercase). **Não lê CNPJ.**
-   - `isAuto` = `subproduto2 == "Automóveis"`.
-   - `isPfPermitido` = `subproduto2 == "Consulta PF"` E `user_id ∈ { aleff.cordeiro@revemar.com.br, ana.vitoria@revemar.com.br }`.
-   - Se nenhum: `pcvDescartadas++` e pula. Senão: incrementa `pcvAuto` ou `pcvPf`.
-   - **REMOVER**: a escrita em `pcVariavelPorCnpj` (linhas 323-325 atuais).
-4. Ao fim do loop, o `ParseResult` carrega dois números desta aba:
-   - `pcVariavelTotalLinhas = pcvTotal` (ex.: 476)
-   - `pcVariavelLinhasAuto = pcvAuto + pcvPf` (ex.: 250)
-5. Emite warning informativo na UI: `"Power Curve Variável: 250/476 linhas para Automóveis (52,52%) — ..."`.
+Trocar nas linhas que leem PCV:
+- `get(r, "subproduto2")` → `getLoose(r, "subproduto2", "sub produto 2", "subproduto 2")`
+- `get(r, "user_id")` → `getLoose(r, "user_id", "userid", "usuario", "user")`
+- `get(r, "CNPJ")` → manter como está (CNPJ é estável).
 
-## Mudanças
+E na detecção do cabeçalho da PCV (`sheetToRowsByHeader`), passar a usar a mesma comparação tolerante para localizar a linha de header — assim, mesmo se o nome estiver com pontuação/underscore, o cabeçalho é reconhecido e usamos os fallbacks na ordem correta (`["CNPJ","subproduto2","user_id"]` primeiro).
 
-### `src/lib/parse-rateio.ts`
-- Remover a escrita em `pcVariavelPorCnpj` dentro do loop da PCV (linhas 323-325).
-- Manter o campo `pcVariavelPorCnpj` no `ParseResult` por compatibilidade de tipos (sempre vazio). Se nenhum outro arquivo o lê após o fix, remover do tipo também.
+### 2) Diagnóstico mais útil (warning)
 
-### `src/lib/compute-rateio.ts`
-- Manter `pcvShareAuto` (linhas 62-65) e `fatia.pcAdicional = pcAdicionalGrupo × pcvShareAuto` (linhas 69-72) intactos — esta parte já está correta.
-- Remover o ramo `pcAdicionalSource === "pcv"` (linhas 181-184) e a variável `totalPcVar` (linha 168, 174, 182).
-- Nova regra de base do PC Adicional:
-  - Se `totalUnicoAuto > 0` → fonte = `unico` (distribui por `unicoAutoPorCnpj`).
-  - Senão → fonte = `intranet` (distribui pela Intranet das lojas do segmento Automóveis).
-- Remover `qPcv` do cálculo de `q` na linha 213-214.
-- Avaliar a coluna `qtdPcSegmento` em `RateioRow`: vai ficar sempre 0. Se a UI mostra essa coluna, remover ou ocultar.
+Hoje o warning só diz `0/476 (0,00%)`. Vou enriquecer:
+- Listar os **nomes reais de coluna detectados** na aba PCV (cabeçalho original, sem normalizar).
+- Mostrar os **3 valores distintos mais comuns** de `subproduto2`, com contagem.
+- Mostrar quantas linhas têm `user_id` preenchido.
 
-## Verificação após o fix
+Assim, se ainda assim falhar, a próxima tentativa já mostra exatamente qual nome esperar.
 
-Rodar "Novo Rateio" com a planilha atual e conferir:
-- Soma da coluna `pcAdicional` na etapa 3 = `pcAdicionalGrupo × 52,52%` (não mais 0).
-- Distribuição entre lojas do segmento Automóveis bate com a proporção de Único Auto por CNPJ.
-- Desmarcar lojas no início NÃO altera a fração 52,52%.
+### 3) Sem mudança de UI
 
-## Nomenclatura (regra do projeto)
+A prévia do Passo 3 já lê `pcvShareAuto` corretamente. Após o fix do parse, a porcentagem volta a mostrar ~52,52%.
 
-Salvo em `mem://index.md`. Resumo: nunca usar "AUTOS" / "Auto" como abreviação de "Automóveis" em UI/warnings/mensagens — "AUTOS" é categoria contábil da planilha Empresas. No código, identificadores internos (`AUTOMOVEIS`, `shareAuto`, etc.) podem ser mantidos.
+## Arquivo proposto para edição
+
+- `src/lib/parse-rateio.ts`
+
+Nenhuma mudança em `compute-rateio.ts`, na UI ou no schema.
+
+## Como você verifica depois
+
+1. Reenvie a mesma planilha no Passo 1.
+2. No "Resumo extraído", a linha "Power Curve Variável" deve voltar a `250/476 linhas para Automóveis (52,52%)`.
+3. No Passo 3, a prévia mostrará "PC Adicional Auto = PC Adicional grupo × 52,52%".
+4. Se ainda der 0, o novo warning amarelo dirá quais nomes de coluna a planilha realmente tem — me mande esse texto e eu adiciono o caso.

@@ -124,6 +124,19 @@ function get(row: Record<string, unknown>, name: string): unknown {
   return null;
 }
 
+/** Match tolerante: ignora espaços, underscores, hífens e pontuação.
+ *  Aceita igualdade ou inclusão. Use para colunas com nomes voláteis. */
+function getLoose(row: Record<string, unknown>, ...candidates: string[]): unknown {
+  const strip = (s: string) => norm(s).replace(/[^A-Z0-9]/g, "");
+  const targets = candidates.map(strip).filter(Boolean);
+  for (const k of Object.keys(row)) {
+    const ks = strip(k);
+    if (!ks) continue;
+    if (targets.some((t) => ks === t || ks.includes(t) || t.includes(ks))) return row[k];
+  }
+  return null;
+}
+
 export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
   const wb = XLSX.read(buffer);
   const result: ParseResult = {
