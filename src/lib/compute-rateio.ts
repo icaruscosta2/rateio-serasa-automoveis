@@ -70,7 +70,7 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
       parsed.pcVariavelTotalLinhas > 0
         ? parsed.pcAdicionalGrupo * pcvShareAuto
         : parsed.pcAdicionalGrupo, // sem PCV → fallback: tudo para Auto
-    fi: parsed.fiGrupo, // total do grupo; será dividido por proporção de Intranet
+    fi: parsed.fiGrupo * pct.fi, // fatia Auto do F&I (multiplicador histórico)
     // ADM Rateado (Rejane) vai 100% para Automóveis
     adm: parsed.admRateadoGrupo,
   };
