@@ -222,10 +222,10 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
       }
     }
 
-    // ADM: 100% Automóveis, distribuído pela Intranet do segmento Auto.
+    // ADM: 100% Automóveis, distribuído pela Intranet do segmento Auto (universo).
     let admRateado = 0;
-    if (seg === "AUTOMOVEIS" && totalIntranetAuto > 0) {
-      admRateado = (fatia.adm * qIntra) / totalIntranetAuto;
+    if (seg === "AUTOMOVEIS" && totalIntranetAutoUniverso > 0) {
+      admRateado = (fatia.adm * qIntra) / totalIntranetAutoUniverso;
     }
 
     const total = consumoMinimo + pcFixo + pcAdicional + fiNovos + fiSeminovos + admRateado;
