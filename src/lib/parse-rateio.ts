@@ -19,7 +19,13 @@ export interface ParseResult {
   // Único Auto — referência (mantida para diagnóstico)
   unicoAutoPorCnpj: Map<string, number>;
   // Power Curve Variável — base oficial para rateio do PC Adicional (consultas por CNPJ)
+  // Numeradores: contagem por CNPJ APENAS das linhas que casam o filtro
+  // (Automóveis + Consulta PF dos usuários permitidos).
   pcVariavelPorCnpj: Map<string, number>;
+  // Denominador: TOTAL de linhas da aba Power Curve Variável (todas, sem filtro).
+  // É essa proporção que define quanto do PC Adicional vai para Automóveis.
+  pcVariavelTotalLinhas: number;
+  pcVariavelLinhasAuto: number; // = soma dos numeradores filtrados
   // Diagnóstico
   abasEncontradas: string[];
   abasFaltando: string[];
