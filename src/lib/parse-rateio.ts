@@ -304,9 +304,10 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     let pcvAuto = 0;
     let pcvPf = 0;
     let pcvDescartadas = 0;
+    let pcvTotal = 0;
     for (const r of rows) {
+      pcvTotal++;
       const cnpj = normalizeCnpj(get(r, "CNPJ"));
-      if (!cnpj) continue;
       const sub2 = norm(String(get(r, "subproduto2") ?? ""));
       const user = String(get(r, "user_id") ?? "").trim().toLowerCase();
       const isAuto = sub2 === norm("Automóveis") || sub2 === norm("Automoveis");
@@ -319,10 +320,15 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
       }
       if (isAuto) pcvAuto++;
       else pcvPf++;
-      result.pcVariavelPorCnpj.set(cnpj, (result.pcVariavelPorCnpj.get(cnpj) ?? 0) + 1);
+      if (cnpj) {
+        result.pcVariavelPorCnpj.set(cnpj, (result.pcVariavelPorCnpj.get(cnpj) ?? 0) + 1);
+      }
     }
+    result.pcVariavelTotalLinhas = pcvTotal;
+    result.pcVariavelLinhasAuto = pcvAuto + pcvPf;
+    const pctAuto = pcvTotal > 0 ? ((pcvAuto + pcvPf) / pcvTotal) * 100 : 0;
     result.warnings.push(
-      `Power Curve Variável: ${pcvAuto} Automóveis + ${pcvPf} Consulta PF (Aleff/Ana) = ${pcvAuto + pcvPf} consultas; ${pcvDescartadas} descartadas.`,
+      `Power Curve Variável: ${pcvAuto + pcvPf}/${pcvTotal} linhas para Automóveis (${pctAuto.toFixed(2)}%) — ${pcvAuto} Automóveis + ${pcvPf} Consulta PF (Aleff/Ana); ${pcvDescartadas} descartadas.`,
     );
   }
 
