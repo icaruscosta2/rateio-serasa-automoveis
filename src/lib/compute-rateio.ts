@@ -161,37 +161,34 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     );
   }
 
-  // ===== Bases globais para PC Adicional / ADM =====
-  // (somam só os "donos" de CNPJ — já dedupado — e ignoram excluídas)
+  // ===== Bases globais (UNIVERSO) para PC Adicional / ADM =====
+  // Regra: o denominador é SEMPRE o universo de empresas AUTOMOVEIS com
+  // bandeira mapeada (incluídas ou não). Assim, desmarcar uma loja faz a
+  // parte dela "se perder" em vez de redistribuir entre as restantes.
   // IMPORTANTE: a aba Power Curve Variável NÃO é usada como base de
   // distribuição (o CNPJ daquela aba é do cliente, não da concessionária).
-  // A fração Auto da PCV já foi aplicada acima em fatia.pcAdicional.
-  let totalIntranetAuto = 0; // para ADM (100% Auto) e fallback do PC Adicional
-  let totalUnicoAuto = 0;
-  for (const e of incluidas) {
-    const seg = segPorEmpresa.get(e.cod_empresa);
-    if (!seg) continue;
-    if (seg === "AUTOMOVEIS") {
-      totalIntranetAuto += qtd(parsed.intranetPorCnpj, e);
-      totalUnicoAuto += qtd(parsed.unicoAutoPorCnpj, e);
-    }
+  let totalIntranetAutoUniverso = 0;
+  let totalUnicoAutoUniverso = 0;
+  for (const e of empresas) {
+    const seg = segmentoDaBandeira(e.bandeira);
+    if (seg !== "AUTOMOVEIS") continue;
+    const c = e.cnpj_normalizado;
+    if (!c || ownerByCnpjAll.get(c) !== e.cod_empresa) continue;
+    totalIntranetAutoUniverso += parsed.intranetPorCnpj.get(c) ?? 0;
+    totalUnicoAutoUniverso += parsed.unicoAutoPorCnpj.get(c) ?? 0;
   }
 
   // PC Adicional só vai pra empresas AUTOMOVEIS.
-  // Base preferencial: Único Auto (CNPJ de concessionária). Fallback: Intranet Auto.
+  // Base preferencial: Intranet Auto (mais robusta e sempre presente).
+  // Fallback: Único Auto (caso a Intranet do segmento Auto venha zerada).
   let totalPcAdicionalBase = 0;
   let pcAdicionalSource: "unico" | "intranet" = "intranet";
-  if (totalUnicoAuto > 0) {
-    totalPcAdicionalBase = totalUnicoAuto;
-    pcAdicionalSource = "unico";
-  } else {
-    // só Auto contribui
-    let s = 0;
-    for (const e of incluidas) {
-      if (segPorEmpresa.get(e.cod_empresa) === "AUTOMOVEIS") s += qtd(parsed.intranetPorCnpj, e);
-    }
-    totalPcAdicionalBase = s;
+  if (totalIntranetAutoUniverso > 0) {
+    totalPcAdicionalBase = totalIntranetAutoUniverso;
     pcAdicionalSource = "intranet";
+  } else if (totalUnicoAutoUniverso > 0) {
+    totalPcAdicionalBase = totalUnicoAutoUniverso;
+    pcAdicionalSource = "unico";
   }
 
   const rows: RateioRow[] = incluidas.map((e) => {
