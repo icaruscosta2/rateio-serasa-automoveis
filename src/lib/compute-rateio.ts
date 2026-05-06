@@ -281,7 +281,20 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     },
   );
 
-  return { rows, totals, fatiaAuto: fatia };
+  const fiPorSegmento: Record<string, number> = {};
+  for (const [seg, v] of fiFatiaPorSeg) fiPorSegmento[seg] = v;
+  const intranetUniversoPorSegmento: Record<string, number> = {};
+  for (const [seg, v] of intranetUniversoPorSegMap) intranetUniversoPorSegmento[seg] = v;
+
+  return {
+    rows,
+    totals,
+    fatiaAuto: fatia,
+    fiPorSegmento,
+    intranetUniversoPorSegmento,
+    intranetUniversoTotal: intranetUniverso,
+    pcvShareAuto,
+  };
 }
 
 // Backwards-compat (alguma view antiga pode importar)
