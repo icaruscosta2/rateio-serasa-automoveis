@@ -105,6 +105,7 @@ function NovoRateioPage() {
         cod_empresa: c.cod_empresa,
         nome: c.nome,
         cnpj_normalizado: c.cnpj_normalizado,
+        bandeira: c.bandeira,
         incluida: sel[c.cod_empresa]?.incluida ?? false,
         is_matriz: sel[c.cod_empresa]?.matriz ?? false,
       })),
