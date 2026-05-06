@@ -109,11 +109,13 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
   }
 
   // ===== F&I em N segmentos =====
-  // 1) Soma de linhas Intranet por segmento (ignora empresas excluídas).
+  // Numerador: linhas Intranet por segmento, somando APENAS empresas incluídas.
+  // Denominador: linhas Intranet de TODAS as empresas com bandeira mapeada
+  // (incluídas ou não). Assim, desmarcar um segmento NÃO faz suas linhas
+  // migrarem para os outros — a fatia daquele segmento simplesmente "se perde".
   const intranetPorSeg = new Map<Segmento, number>();
   const novosPorSeg = new Map<Segmento, number>();
   const semiPorSeg = new Map<Segmento, number>();
-  let intranetTotalSegmentado = 0;
   for (const e of incluidas) {
     const seg = segPorEmpresa.get(e.cod_empresa);
     if (!seg) continue;
@@ -123,15 +125,39 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     intranetPorSeg.set(seg, (intranetPorSeg.get(seg) ?? 0) + qI);
     novosPorSeg.set(seg, (novosPorSeg.get(seg) ?? 0) + qN);
     semiPorSeg.set(seg, (semiPorSeg.get(seg) ?? 0) + qS);
-    intranetTotalSegmentado += qI;
   }
 
-  // 2) Fatia F&I por segmento, proporcional às linhas Intranet daquele segmento.
+  // Denominador "universo": Intranet de todas as empresas com bandeira mapeada
+  // (independe de estar incluída no rateio). Dedupa por CNPJ.
+  const ownerByCnpjAll = new Map<string, number>();
+  for (const e of empresas) {
+    const c = e.cnpj_normalizado;
+    if (!c) continue;
+    const seg = segmentoDaBandeira(e.bandeira);
+    const cur = ownerByCnpjAll.get(c);
+    if (cur === undefined) {
+      ownerByCnpjAll.set(c, e.cod_empresa);
+    } else {
+      const curEmp = empresas.find((x) => x.cod_empresa === cur);
+      const curSeg = curEmp ? segmentoDaBandeira(curEmp.bandeira) : null;
+      if (curSeg == null && seg != null) ownerByCnpjAll.set(c, e.cod_empresa);
+    }
+  }
+  let intranetUniverso = 0;
+  for (const e of empresas) {
+    const seg = segmentoDaBandeira(e.bandeira);
+    if (!seg) continue;
+    const c = e.cnpj_normalizado;
+    if (!c || ownerByCnpjAll.get(c) !== e.cod_empresa) continue;
+    intranetUniverso += parsed.intranetPorCnpj.get(c) ?? 0;
+  }
+
+  // Fatia F&I por segmento incluído, proporcional ao denominador universo.
   const fiFatiaPorSeg = new Map<Segmento, number>();
   for (const [seg, q] of intranetPorSeg) {
     fiFatiaPorSeg.set(
       seg,
-      intranetTotalSegmentado > 0 ? (fatia.fi * q) / intranetTotalSegmentado : 0,
+      intranetUniverso > 0 ? (fatia.fi * q) / intranetUniverso : 0,
     );
   }
 
