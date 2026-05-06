@@ -49,6 +49,11 @@ export interface RateioOutput {
     fi: number;
     adm: number;
   };
+  // Diagnóstico: fatia F&I por segmento e a proporção Intranet usada.
+  fiPorSegmento: Record<string, number>;
+  intranetUniversoPorSegmento: Record<string, number>;
+  intranetUniversoTotal: number;
+  pcvShareAuto: number; // ex.: 250/476
 }
 
 export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOutput {
@@ -144,54 +149,56 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     }
   }
   let intranetUniverso = 0;
+  const intranetUniversoPorSegMap = new Map<Segmento, number>();
   for (const e of empresas) {
     const seg = segmentoDaBandeira(e.bandeira);
     if (!seg) continue;
     const c = e.cnpj_normalizado;
     if (!c || ownerByCnpjAll.get(c) !== e.cod_empresa) continue;
-    intranetUniverso += parsed.intranetPorCnpj.get(c) ?? 0;
+    const q = parsed.intranetPorCnpj.get(c) ?? 0;
+    intranetUniverso += q;
+    intranetUniversoPorSegMap.set(seg, (intranetUniversoPorSegMap.get(seg) ?? 0) + q);
   }
 
-  // Fatia F&I por segmento incluído, proporcional ao denominador universo.
+  // Fatia F&I por segmento (usa universo como base — desmarcar uma loja
+  // não migra valor entre segmentos; e a fatia "Auto" para a prévia é
+  // proporcional à Intranet do segmento Auto sobre o universo).
   const fiFatiaPorSeg = new Map<Segmento, number>();
-  for (const [seg, q] of intranetPorSeg) {
+  for (const [seg, qUniv] of intranetUniversoPorSegMap) {
     fiFatiaPorSeg.set(
       seg,
-      intranetUniverso > 0 ? (fatia.fi * q) / intranetUniverso : 0,
+      intranetUniverso > 0 ? (fatia.fi * qUniv) / intranetUniverso : 0,
     );
   }
 
-  // ===== Bases globais para PC Adicional / ADM =====
-  // (somam só os "donos" de CNPJ — já dedupado — e ignoram excluídas)
+  // ===== Bases globais (UNIVERSO) para PC Adicional / ADM =====
+  // Regra: o denominador é SEMPRE o universo de empresas AUTOMOVEIS com
+  // bandeira mapeada (incluídas ou não). Assim, desmarcar uma loja faz a
+  // parte dela "se perder" em vez de redistribuir entre as restantes.
   // IMPORTANTE: a aba Power Curve Variável NÃO é usada como base de
   // distribuição (o CNPJ daquela aba é do cliente, não da concessionária).
-  // A fração Auto da PCV já foi aplicada acima em fatia.pcAdicional.
-  let totalIntranetAuto = 0; // para ADM (100% Auto) e fallback do PC Adicional
-  let totalUnicoAuto = 0;
-  for (const e of incluidas) {
-    const seg = segPorEmpresa.get(e.cod_empresa);
-    if (!seg) continue;
-    if (seg === "AUTOMOVEIS") {
-      totalIntranetAuto += qtd(parsed.intranetPorCnpj, e);
-      totalUnicoAuto += qtd(parsed.unicoAutoPorCnpj, e);
-    }
+  let totalIntranetAutoUniverso = 0;
+  let totalUnicoAutoUniverso = 0;
+  for (const e of empresas) {
+    const seg = segmentoDaBandeira(e.bandeira);
+    if (seg !== "AUTOMOVEIS") continue;
+    const c = e.cnpj_normalizado;
+    if (!c || ownerByCnpjAll.get(c) !== e.cod_empresa) continue;
+    totalIntranetAutoUniverso += parsed.intranetPorCnpj.get(c) ?? 0;
+    totalUnicoAutoUniverso += parsed.unicoAutoPorCnpj.get(c) ?? 0;
   }
 
   // PC Adicional só vai pra empresas AUTOMOVEIS.
-  // Base preferencial: Único Auto (CNPJ de concessionária). Fallback: Intranet Auto.
+  // Base preferencial: Intranet Auto (mais robusta e sempre presente).
+  // Fallback: Único Auto (caso a Intranet do segmento Auto venha zerada).
   let totalPcAdicionalBase = 0;
   let pcAdicionalSource: "unico" | "intranet" = "intranet";
-  if (totalUnicoAuto > 0) {
-    totalPcAdicionalBase = totalUnicoAuto;
-    pcAdicionalSource = "unico";
-  } else {
-    // só Auto contribui
-    let s = 0;
-    for (const e of incluidas) {
-      if (segPorEmpresa.get(e.cod_empresa) === "AUTOMOVEIS") s += qtd(parsed.intranetPorCnpj, e);
-    }
-    totalPcAdicionalBase = s;
+  if (totalIntranetAutoUniverso > 0) {
+    totalPcAdicionalBase = totalIntranetAutoUniverso;
     pcAdicionalSource = "intranet";
+  } else if (totalUnicoAutoUniverso > 0) {
+    totalPcAdicionalBase = totalUnicoAutoUniverso;
+    pcAdicionalSource = "unico";
   }
 
   const rows: RateioRow[] = incluidas.map((e) => {
@@ -225,10 +232,10 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
       }
     }
 
-    // ADM: 100% Automóveis, distribuído pela Intranet do segmento Auto.
+    // ADM: 100% Automóveis, distribuído pela Intranet do segmento Auto (universo).
     let admRateado = 0;
-    if (seg === "AUTOMOVEIS" && totalIntranetAuto > 0) {
-      admRateado = (fatia.adm * qIntra) / totalIntranetAuto;
+    if (seg === "AUTOMOVEIS" && totalIntranetAutoUniverso > 0) {
+      admRateado = (fatia.adm * qIntra) / totalIntranetAutoUniverso;
     }
 
     const total = consumoMinimo + pcFixo + pcAdicional + fiNovos + fiSeminovos + admRateado;
@@ -274,7 +281,20 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     },
   );
 
-  return { rows, totals, fatiaAuto: fatia };
+  const fiPorSegmento: Record<string, number> = {};
+  for (const [seg, v] of fiFatiaPorSeg) fiPorSegmento[seg] = v;
+  const intranetUniversoPorSegmento: Record<string, number> = {};
+  for (const [seg, v] of intranetUniversoPorSegMap) intranetUniversoPorSegmento[seg] = v;
+
+  return {
+    rows,
+    totals,
+    fatiaAuto: fatia,
+    fiPorSegmento,
+    intranetUniversoPorSegmento,
+    intranetUniversoTotal: intranetUniverso,
+    pcvShareAuto,
+  };
 }
 
 // Backwards-compat (alguma view antiga pode importar)
