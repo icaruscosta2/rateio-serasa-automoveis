@@ -1,40 +1,47 @@
-## Ajustes finais no rateio
+## Objetivo
 
-### 1) PC Fixo — mais casas decimais (1/3 ↔ 2/3)
+Permitir que o usuário apague rateios existentes diretamente pela interface, com confirmação antes da exclusão e remoção das linhas relacionadas.
 
-O input do percentual de PC Fixo está limitado a 3 casas (`step="0.001"`) e o valor padrão é `0.667`, o que arredonda e cria diferença de centavos contra o valor exato de 2/3.
+## Mudanças
 
-**Mudanças em `src/routes/rateios.novo.tsx`:**
-- Default de `pct.pcFixo`: `0.667` → `2/3` (≈ 0.6666666666666666).
-- Input de "Power Curve Fixo": `step="0.001"` → `step="0.00000001"` (e mostrar 6 casas no rótulo de % abaixo do input).
-- Aplicar o mesmo `step` aos demais campos para que o usuário possa digitar `0.56` ou frações exatas sem perda.
-- Exibir o % com mais precisão: `{(pct[k] * 100).toFixed(4)}%` no helper text (mantém leitura clara, sem cortar dígitos).
+### 1) Card da lista (`src/routes/rateios.index.tsx`)
+- Adicionar um botão de lixeira (ícone `Trash2`) no canto superior direito de cada card de rateio.
+- O botão fica sobreposto ao card mas **não dispara a navegação** (usa `e.preventDefault()` + `e.stopPropagation()`).
+- Ao clicar, abre um diálogo de confirmação (`AlertDialog` do shadcn) com o texto:
+  > "Excluir o rateio de [mês/ano]? Esta ação não pode ser desfeita."
+- Ao confirmar, executa a exclusão e remove o card da lista localmente. Mostra toast de sucesso/erro.
 
-Resultado: ao deixar o default ou ao digitar `0.66666667`, a fatia bate exatamente com o valor da planilha.
+### 2) Tela de detalhe (`src/routes/rateios.$id.tsx`)
+- Adicionar botão "Excluir rateio" (variante `destructive`, ícone `Trash2`) no cabeçalho, ao lado do botão de download.
+- Mesmo fluxo de confirmação via `AlertDialog`.
+- Após excluir com sucesso, navega de volta para `/rateios` e mostra toast.
 
-### 2) F&I PEFIN PF — diferença de R$ 9,78
+### 3) Lógica de exclusão
+Como as tabelas filhas (`rateio_empresas`, `rateio_consultas`, `rateio_resultados`) não têm cascade definido no banco, a exclusão será feita em ordem dentro de uma função utilitária compartilhada `deleteRateio(id)`:
 
-O sistema mostra **R$ 8.899,80** e a planilha **R$ 8.890,02** (diferença = R$ 9,78). A regra atual soma TODA linha cujo `Descrição de Produto NF` seja exatamente `CREDNET SERASA PEFIN PF TOP`, independentemente do logon (exceto Rejane, que é tratada antes).
+```text
+1. delete from rateio_resultados where rateio_id = id
+2. delete from rateio_consultas  where rateio_id = id
+3. delete from rateio_empresas   where rateio_id = id
+4. delete from rateios           where id = id
+```
 
-Diferença de R$ 9,78 é compatível com **1 ou 2 linhas extras** sendo somadas no PEFIN PF. Hipóteses prováveis:
+Tudo a partir do client Supabase do usuário — as políticas de RLS já garantem que cada usuário só consegue apagar os próprios rateios e suas linhas filhas.
 
-- (a) Existe alguma linha `PEFIN PF TOP` com logon que **não deveria** entrar no F&I PF (ex.: outro logon específico que a planilha exclui manualmente).
-- (b) Existe variação na descrição (ex.: `CREDNET SERASA PEFIN PF` sem "TOP", ou com sufixo) que a planilha trata diferente.
+A função fica em `src/lib/delete-rateio.ts` e é usada pelos dois lugares.
 
-Como não consigo abrir a planilha daqui para confirmar a origem dos R$ 9,78, vou **adicionar diagnóstico** que torna isso visível na própria UI:
+### 4) Arquivo de storage (opcional, sem bloquear)
+Se `arquivo_storage_path` estiver preenchido no rateio, também removemos o arquivo do bucket `rateio-uploads` (`supabase.storage.from("rateio-uploads").remove([path])`). Falha silenciosa: se der erro de storage, a exclusão do rateio em si já foi feita e mostramos só um warning no console.
 
-**Mudanças em `src/lib/parse-rateio.ts`:**
-- Manter um detalhamento por logon das linhas que entraram em PEFIN PF (`Map<logon, { count, soma }>`).
-- Expor em `ParseResult` como `demoFiPefinPfPorLogon` (apenas para diagnóstico).
+## Detalhes técnicos
 
-**Mudanças em `src/routes/rateios.novo.tsx`:**
-- Logo abaixo da linha "Demonstrativo — F&I PEFIN PF: …", listar (em texto pequeno) cada logon que somou ao PEFIN PF com count e total, ordenado por valor desc. Ex.:
-  ```
-  PEFIN PF por logon: PC CREDITO (215, R$ 8.890,02) · FULANO (2, R$ 9,78)
-  ```
+- **Componentes novos usados**: `AlertDialog`, `AlertDialogAction`, `AlertDialogCancel`, `AlertDialogContent`, `AlertDialogDescription`, `AlertDialogFooter`, `AlertDialogHeader`, `AlertDialogTitle`, `AlertDialogTrigger` (já existem em `src/components/ui/alert-dialog.tsx`).
+- **Sem migrations**: nenhuma alteração de schema. Não vamos adicionar `ON DELETE CASCADE` agora para manter o escopo pequeno — a deleção em ordem cobre todos os casos via RLS do dono.
+- **Estado da lista**: depois de excluir, atualizamos `rows` com `setRows(rows.filter(r => r.id !== deletedId))` em vez de refazer o fetch.
+- **Loading state**: enquanto a exclusão estiver em andamento, o botão de confirmar fica desabilitado para evitar duplo-clique.
 
-Com isso você consegue identificar imediatamente qual logon está somando os R$ 9,78 a mais e me diz a regra de exclusão (ex.: "ignorar logon X" ou "só somar logon PC CREDITO no PEFIN PF"). Aí faço o ajuste definitivo da regra de filtragem.
+## Fora do escopo
 
-### Arquivos alterados
-- `src/routes/rateios.novo.tsx` — defaults/step/precision dos inputs e exibição do detalhamento PEFIN PF por logon.
-- `src/lib/parse-rateio.ts` — coleta e expõe `demoFiPefinPfPorLogon` no `ParseResult`.
+- Excluir múltiplos rateios em lote (seleção).
+- "Lixeira" / soft delete — a exclusão é permanente.
+- Adicionar `ON DELETE CASCADE` no schema (pode ser feito depois se preferir centralizar no banco).
