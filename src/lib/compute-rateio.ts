@@ -1,19 +1,5 @@
 import type { ParseResult } from "./parse-rateio";
-
-/**
- * Classifica o segmento de uma empresa pelo nome.
- * Heurística (extensível): se o nome contém termos de "pesados/diversos"
- * (CAMINHÕES, MOTOS, MÁQUINAS, FAZENDA, PESADOS...) → "PESADOS";
- * caso contrário → "AUTOMOVEIS".
- */
-const PESADOS_KEYWORDS = ["CAMINH", "MOTO", "MAQUIN", "FAZEND", "PESADO", "TRATOR", "IMPLEMENT"];
-export function classificarSegmento(nome: string): "AUTOMOVEIS" | "PESADOS" {
-  const n = (nome ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase();
-  return PESADOS_KEYWORDS.some((k) => n.includes(k)) ? "PESADOS" : "AUTOMOVEIS";
-}
+import { segmentoDaBandeira, type Segmento } from "./segmentos";
 
 export interface RateioInput {
   parsed: ParseResult;
@@ -21,6 +7,7 @@ export interface RateioInput {
     cod_empresa: number;
     nome: string;
     cnpj_normalizado: string | null;
+    bandeira: string | null;
     incluida: boolean;
     is_matriz: boolean;
   }>;
@@ -37,6 +24,7 @@ export interface RateioRow {
   cod_empresa: number;
   nome: string;
   cnpj: string;
+  segmento: Segmento | "EXCLUIDA";
   qtdNovos: number;
   qtdSeminovos: number;
   qtdIntranet: number;
@@ -53,7 +41,7 @@ export interface RateioRow {
 
 export interface RateioOutput {
   rows: RateioRow[];
-  totals: Omit<RateioRow, "cod_empresa" | "nome" | "cnpj">;
+  totals: Omit<RateioRow, "cod_empresa" | "nome" | "cnpj" | "segmento">;
   fatiaAuto: {
     consumoMinimo: number;
     pcFixo: number;
@@ -73,108 +61,152 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     pcFixo: parsed.pcFixoGrupo * pct.pcFixo,
     pcAdicional: parsed.pcAdicionalGrupo * pct.pcAdicional,
     fi: parsed.fiGrupo * pct.fi,
-    // ADM Rateado (Rejane) vai 100% para Automóveis — ignora pct.adm.
+    // ADM Rateado (Rejane) vai 100% para Automóveis
     adm: parsed.admRateadoGrupo,
   };
 
-  // Pré-cálculos a partir da Intranet (linhas contadas por CNPJ)
-  const totalIntranet = incluidas.reduce(
-    (s, e) => s + (e.cnpj_normalizado ? parsed.intranetPorCnpj.get(e.cnpj_normalizado) ?? 0 : 0),
-    0,
-  );
-
-
-  const totalUnicoAuto = incluidas.reduce(
-    (s, e) => s + (e.cnpj_normalizado ? parsed.unicoAutoPorCnpj.get(e.cnpj_normalizado) ?? 0 : 0),
-    0,
-  );
-  const totalPcVar = incluidas.reduce(
-    (s, e) => s + (e.cnpj_normalizado ? parsed.pcVariavelPorCnpj.get(e.cnpj_normalizado) ?? 0 : 0),
-    0,
-  );
-
-  // ===== F&I em 2 níveis: por segmento (Auto vs Pesados) e depois por empresa =====
-  // Nível 1: contar linhas da Intranet por segmento, classificando o CNPJ via nome da empresa.
-  const segmentoPorCnpj = new Map<string, "AUTOMOVEIS" | "PESADOS">();
+  // Segmento de cada empresa pela BANDEIRA (null = excluída/desconhecida).
+  const segPorEmpresa = new Map<number, Segmento | null>();
   for (const e of incluidas) {
-    if (!e.cnpj_normalizado) continue;
-    segmentoPorCnpj.set(e.cnpj_normalizado, classificarSegmento(e.nome));
+    segPorEmpresa.set(e.cod_empresa, segmentoDaBandeira(e.bandeira));
   }
-  let intranetSegAuto = 0;
-  let intranetSegPesados = 0;
+
+  // ---- Dedupe de CNPJ: quando vários códigos compartilham o mesmo CNPJ,
+  // só UMA empresa "consome" as linhas Intranet/UnicoAuto/PCV daquele CNPJ.
+  // Regra: prioriza empresa cuja bandeira tenha segmento (não excluída).
+  // (No futuro, quando o filtro for por tipo_negocio, a regra de desempate
+  // muda — mas hoje a UI já oculta excluídas, então isto só serve de garantia.)
+  const ownerByCnpj = new Map<string, number>();
   for (const e of incluidas) {
     const c = e.cnpj_normalizado;
     if (!c) continue;
-    const q = parsed.intranetPorCnpj.get(c) ?? 0;
-    if (segmentoPorCnpj.get(c) === "PESADOS") intranetSegPesados += q;
-    else intranetSegAuto += q;
+    const seg = segPorEmpresa.get(e.cod_empresa);
+    const cur = ownerByCnpj.get(c);
+    if (cur === undefined) {
+      ownerByCnpj.set(c, e.cod_empresa);
+    } else {
+      const curSeg = segPorEmpresa.get(cur);
+      // se a atual é excluída e a nova não, troca
+      if (curSeg == null && seg != null) ownerByCnpj.set(c, e.cod_empresa);
+    }
   }
-  const totalIntranetSeg = intranetSegAuto + intranetSegPesados;
-  const fiFatiaAuto = totalIntranetSeg > 0 ? (fatia.fi * intranetSegAuto) / totalIntranetSeg : 0;
-  const fiFatiaPesados = totalIntranetSeg > 0 ? (fatia.fi * intranetSegPesados) / totalIntranetSeg : 0;
 
-  // Nível 2: dentro de cada segmento, distribuir entre empresas pelas contagens Novos/Seminovos.
-  const novosSegAuto = incluidas.reduce((s, e) => {
+  function qtd(map: Map<string, number>, e: { cod_empresa: number; cnpj_normalizado: string | null }): number {
     const c = e.cnpj_normalizado;
-    if (!c || segmentoPorCnpj.get(c) !== "AUTOMOVEIS") return s;
-    return s + (parsed.intranetNovosPorCnpj.get(c) ?? 0);
-  }, 0);
-  const semiSegAuto = incluidas.reduce((s, e) => {
-    const c = e.cnpj_normalizado;
-    if (!c || segmentoPorCnpj.get(c) !== "AUTOMOVEIS") return s;
-    return s + (parsed.intranetSeminovosPorCnpj.get(c) ?? 0);
-  }, 0);
-  const novosSegPesados = incluidas.reduce((s, e) => {
-    const c = e.cnpj_normalizado;
-    if (!c || segmentoPorCnpj.get(c) !== "PESADOS") return s;
-    return s + (parsed.intranetNovosPorCnpj.get(c) ?? 0);
-  }, 0);
-  const semiSegPesados = incluidas.reduce((s, e) => {
-    const c = e.cnpj_normalizado;
-    if (!c || segmentoPorCnpj.get(c) !== "PESADOS") return s;
-    return s + (parsed.intranetSeminovosPorCnpj.get(c) ?? 0);
-  }, 0);
-  // A fatia do segmento é dividida proporcionalmente ao TOTAL (novos+semi) do segmento;
-  // cada empresa recebe sua parte de Novos e Seminovos pelas suas próprias contagens.
-  const totalSegAuto = novosSegAuto + semiSegAuto;
-  const totalSegPesados = novosSegPesados + semiSegPesados;
+    if (!c) return 0;
+    if (ownerByCnpj.get(c) !== e.cod_empresa) return 0;
+    return map.get(c) ?? 0;
+  }
+
+  // ===== F&I em N segmentos =====
+  // 1) Soma de linhas Intranet por segmento (ignora empresas excluídas).
+  const intranetPorSeg = new Map<Segmento, number>();
+  const novosPorSeg = new Map<Segmento, number>();
+  const semiPorSeg = new Map<Segmento, number>();
+  let intranetTotalSegmentado = 0;
+  for (const e of incluidas) {
+    const seg = segPorEmpresa.get(e.cod_empresa);
+    if (!seg) continue;
+    const qI = qtd(parsed.intranetPorCnpj, e);
+    const qN = qtd(parsed.intranetNovosPorCnpj, e);
+    const qS = qtd(parsed.intranetSeminovosPorCnpj, e);
+    intranetPorSeg.set(seg, (intranetPorSeg.get(seg) ?? 0) + qI);
+    novosPorSeg.set(seg, (novosPorSeg.get(seg) ?? 0) + qN);
+    semiPorSeg.set(seg, (semiPorSeg.get(seg) ?? 0) + qS);
+    intranetTotalSegmentado += qI;
+  }
+
+  // 2) Fatia F&I por segmento, proporcional às linhas Intranet daquele segmento.
+  const fiFatiaPorSeg = new Map<Segmento, number>();
+  for (const [seg, q] of intranetPorSeg) {
+    fiFatiaPorSeg.set(
+      seg,
+      intranetTotalSegmentado > 0 ? (fatia.fi * q) / intranetTotalSegmentado : 0,
+    );
+  }
+
+  // ===== Bases globais para PC Adicional / ADM =====
+  // (somam só os "donos" de CNPJ — já dedupado — e ignoram excluídas)
+  let totalIntranetAuto = 0; // para ADM (100% Auto)
+  let totalUnicoAuto = 0;
+  let totalPcVar = 0;
+  for (const e of incluidas) {
+    const seg = segPorEmpresa.get(e.cod_empresa);
+    if (!seg) continue;
+    if (seg === "AUTOMOVEIS") totalIntranetAuto += qtd(parsed.intranetPorCnpj, e);
+    totalUnicoAuto += qtd(parsed.unicoAutoPorCnpj, e);
+    totalPcVar += qtd(parsed.pcVariavelPorCnpj, e);
+  }
+
+  // PC Adicional só vai pra empresas AUTOMOVEIS (mantém comportamento atual via fallback).
+  // Se há PCV → usa PCV; senão Único Auto; senão Intranet.
+  // Aplicamos sobre AUTOMOVEIS apenas.
+  let totalPcAdicionalBase = 0;
+  let pcAdicionalSource: "pcv" | "unico" | "intranet" = "intranet";
+  if (totalPcVar > 0) {
+    totalPcAdicionalBase = totalPcVar;
+    pcAdicionalSource = "pcv";
+  } else if (totalUnicoAuto > 0) {
+    totalPcAdicionalBase = totalUnicoAuto;
+    pcAdicionalSource = "unico";
+  } else {
+    // só Auto contribui
+    let s = 0;
+    for (const e of incluidas) {
+      if (segPorEmpresa.get(e.cod_empresa) === "AUTOMOVEIS") s += qtd(parsed.intranetPorCnpj, e);
+    }
+    totalPcAdicionalBase = s;
+    pcAdicionalSource = "intranet";
+  }
 
   const rows: RateioRow[] = incluidas.map((e) => {
-    const c = e.cnpj_normalizado ?? "";
-    const qNovos = parsed.intranetNovosPorCnpj.get(c) ?? 0;
-    const qSemi = parsed.intranetSeminovosPorCnpj.get(c) ?? 0;
-    const qIntra = parsed.intranetPorCnpj.get(c) ?? 0;
-    const qUnico = parsed.unicoAutoPorCnpj.get(c) ?? 0;
-    const qPcv = parsed.pcVariavelPorCnpj.get(c) ?? 0;
-    const qPc = qPcv;
-    const seg = segmentoPorCnpj.get(c) ?? "AUTOMOVEIS";
+    const seg = segPorEmpresa.get(e.cod_empresa) ?? null;
+    const qNovos = qtd(parsed.intranetNovosPorCnpj, e);
+    const qSemi = qtd(parsed.intranetSeminovosPorCnpj, e);
+    const qIntra = qtd(parsed.intranetPorCnpj, e);
+    const qUnico = qtd(parsed.unicoAutoPorCnpj, e);
+    const qPcv = qtd(parsed.pcVariavelPorCnpj, e);
 
-    const consumoMinimo = e.is_matriz && matrizes.length > 0 ? fatia.consumoMinimo / matrizes.length : 0;
-    const pcFixo = incluidas.length > 0 ? fatia.pcFixo / incluidas.length : 0;
-    // PC Adicional: rateado por Power Curve Variável (fallback Único Auto → Intranet)
-    const pcAdicional =
-      totalPcVar > 0
-        ? (fatia.pcAdicional * qPcv) / totalPcVar
-        : totalUnicoAuto > 0
-          ? (fatia.pcAdicional * qUnico) / totalUnicoAuto
-          : totalIntranet > 0
-            ? (fatia.pcAdicional * qIntra) / totalIntranet
-            : 0;
-    // F&I: 2 níveis
-    const fatiaFi = seg === "PESADOS" ? fiFatiaPesados : fiFatiaAuto;
-    const totalSeg = seg === "PESADOS" ? totalSegPesados : totalSegAuto;
-    const fiNovos = totalSeg > 0 ? (fatiaFi * qNovos) / totalSeg : 0;
-    const fiSeminovos = totalSeg > 0 ? (fatiaFi * qSemi) / totalSeg : 0;
-    const admRateado = totalIntranet > 0 ? (fatia.adm * qIntra) / totalIntranet : 0;
+    const consumoMinimo =
+      seg && e.is_matriz && matrizes.length > 0 ? fatia.consumoMinimo / matrizes.length : 0;
+    const pcFixo = seg && incluidas.length > 0 ? fatia.pcFixo / incluidas.length : 0;
+
+    // PC Adicional: só Automóveis recebe.
+    let pcAdicional = 0;
+    if (seg === "AUTOMOVEIS" && totalPcAdicionalBase > 0) {
+      const q =
+        pcAdicionalSource === "pcv" ? qPcv : pcAdicionalSource === "unico" ? qUnico : qIntra;
+      pcAdicional = (fatia.pcAdicional * q) / totalPcAdicionalBase;
+    }
+
+    // F&I: divide a fatia do segmento entre suas empresas pelas contagens (Novos/Semi).
+    let fiNovos = 0;
+    let fiSeminovos = 0;
+    if (seg) {
+      const fatiaFi = fiFatiaPorSeg.get(seg) ?? 0;
+      const totalSeg = (novosPorSeg.get(seg) ?? 0) + (semiPorSeg.get(seg) ?? 0);
+      if (totalSeg > 0) {
+        fiNovos = (fatiaFi * qNovos) / totalSeg;
+        fiSeminovos = (fatiaFi * qSemi) / totalSeg;
+      }
+    }
+
+    // ADM: 100% Automóveis, distribuído pela Intranet do segmento Auto.
+    let admRateado = 0;
+    if (seg === "AUTOMOVEIS" && totalIntranetAuto > 0) {
+      admRateado = (fatia.adm * qIntra) / totalIntranetAuto;
+    }
+
     const total = consumoMinimo + pcFixo + pcAdicional + fiNovos + fiSeminovos + admRateado;
     return {
       cod_empresa: e.cod_empresa,
       nome: e.nome,
       cnpj: e.cnpj_normalizado ?? "",
+      segmento: (seg ?? "EXCLUIDA") as Segmento | "EXCLUIDA",
       qtdNovos: qNovos,
       qtdSeminovos: qSemi,
       qtdIntranet: qIntra,
-      qtdPcSegmento: qPc,
+      qtdPcSegmento: qPcv,
       qtdUnicoAuto: qUnico,
       consumoMinimo,
       pcFixo,
@@ -209,4 +241,9 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
   );
 
   return { rows, totals, fatiaAuto: fatia };
+}
+
+// Backwards-compat (alguma view antiga pode importar)
+export function classificarSegmento(_nome: string): "AUTOMOVEIS" | "PESADOS" {
+  return "AUTOMOVEIS";
 }

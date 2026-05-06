@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { parseRateioWorkbook, type ParseResult } from "@/lib/parse-rateio";
 import { brl, intBR } from "@/lib/format";
 import { computeRateio } from "@/lib/compute-rateio";
+import { isBandeiraExcluida } from "@/lib/segmentos";
 import { Badge } from "@/components/ui/badge";
 
 export const Route = createFileRoute("/rateios/novo")({
@@ -36,6 +37,7 @@ interface CompanyRow {
   cnpj_normalizado: string | null;
   is_matriz: boolean;
   bandeira: string | null;
+  tipo_negocio: string | null;
 }
 
 function NovoRateioPage() {
@@ -66,7 +68,31 @@ function NovoRateioPage() {
       .order("bandeira")
       .order("nome")
       .then(({ data }) => {
-        const rows = (data ?? []) as CompanyRow[];
+        const all = (data ?? []) as CompanyRow[];
+        // 1) Excluir bandeiras administrativas (FAZENDA, CORRETORA, LOCADORA, RGN)
+        const visiveis = all.filter((r) => !isBandeiraExcluida(r.bandeira));
+        // 2) Dedupe por CNPJ — prioriza tipo_negocio = 'CONTÁBIL'
+        const byCnpj = new Map<string, CompanyRow>();
+        const semCnpj: CompanyRow[] = [];
+        for (const r of visiveis) {
+          const c = r.cnpj_normalizado;
+          if (!c) {
+            semCnpj.push(r);
+            continue;
+          }
+          const cur = byCnpj.get(c);
+          if (!cur) {
+            byCnpj.set(c, r);
+          } else {
+            const curIsContabil = (cur.tipo_negocio ?? "").toUpperCase().includes("CONT");
+            const newIsContabil = (r.tipo_negocio ?? "").toUpperCase().includes("CONT");
+            if (!curIsContabil && newIsContabil) byCnpj.set(c, r);
+          }
+        }
+        const rows = [...byCnpj.values(), ...semCnpj].sort((a, b) => {
+          const ba = (a.bandeira ?? "").localeCompare(b.bandeira ?? "");
+          return ba !== 0 ? ba : a.nome.localeCompare(b.nome);
+        });
         setCompanies(rows);
         const init: typeof sel = {};
         rows.forEach((r) => (init[r.cod_empresa] = { incluida: true, matriz: r.is_matriz }));
@@ -104,6 +130,7 @@ function NovoRateioPage() {
         cod_empresa: c.cod_empresa,
         nome: c.nome,
         cnpj_normalizado: c.cnpj_normalizado,
+        bandeira: c.bandeira,
         incluida: sel[c.cod_empresa]?.incluida ?? false,
         is_matriz: sel[c.cod_empresa]?.matriz ?? false,
       })),
