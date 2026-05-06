@@ -200,7 +200,7 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     const qSemi = qtd(parsed.intranetSeminovosPorCnpj, e);
     const qIntra = qtd(parsed.intranetPorCnpj, e);
     const qUnico = qtd(parsed.unicoAutoPorCnpj, e);
-    const qPcv = 0; // PCV não é base de distribuição (CNPJ é do cliente)
+    // qPcv: PCV não é base de distribuição (CNPJ é do cliente). Sempre 0.
 
     const consumoMinimo =
       seg && e.is_matriz && matrizes.length > 0 ? fatia.consumoMinimo / matrizes.length : 0;
@@ -240,7 +240,7 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
       qtdNovos: qNovos,
       qtdSeminovos: qSemi,
       qtdIntranet: qIntra,
-      qtdPcSegmento: qPcv,
+      qtdPcSegmento: 0,
       qtdUnicoAuto: qUnico,
       consumoMinimo,
       pcFixo,
