@@ -95,7 +95,16 @@ function NovoRateioPage() {
         });
         setCompanies(rows);
         const init: typeof sel = {};
-        rows.forEach((r) => (init[r.cod_empresa] = { incluida: true, matriz: r.is_matriz }));
+        rows.forEach((r) => {
+          // Default: desmarca MASSEY (tratores), JCB (máquinas) e VW CAMINHOES.
+          const b = (r.bandeira ?? "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toUpperCase()
+            .trim();
+          const offByDefault = b === "MASSEY" || b === "JCB" || b === "VW CAMINHOES";
+          init[r.cod_empresa] = { incluida: !offByDefault, matriz: r.is_matriz };
+        });
         setSel(init);
       });
   }, []);
