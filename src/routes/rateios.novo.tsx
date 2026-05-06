@@ -313,7 +313,10 @@ function NovoRateioPage() {
                   Único Auto: {parsed.unicoAutoPorCnpj.size} CNPJs · {Array.from(parsed.unicoAutoPorCnpj.values()).reduce((a, b) => a + b, 0)} processos
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Power Curve Variável: {parsed.pcVariavelPorCnpj.size} CNPJs · {Array.from(parsed.pcVariavelPorCnpj.values()).reduce((a, b) => a + b, 0)} consultas
+                  Power Curve Variável: {parsed.pcVariavelLinhasAuto}/{parsed.pcVariavelTotalLinhas} linhas para Automóveis
+                  {parsed.pcVariavelTotalLinhas > 0
+                    ? ` (${((parsed.pcVariavelLinhasAuto / parsed.pcVariavelTotalLinhas) * 100).toFixed(2)}%)`
+                    : ""}
                 </div>
                 {parsed.warnings.length > 0 && (
                   <ul className="text-xs text-amber-700 list-disc pl-5">

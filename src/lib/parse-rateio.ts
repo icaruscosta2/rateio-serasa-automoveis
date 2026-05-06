@@ -320,9 +320,10 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
       }
       if (isAuto) pcvAuto++;
       else pcvPf++;
-      if (cnpj) {
-        result.pcVariavelPorCnpj.set(cnpj, (result.pcVariavelPorCnpj.get(cnpj) ?? 0) + 1);
-      }
+      // Não indexamos por CNPJ: o CNPJ desta aba é do CLIENTE da consulta,
+      // não da concessionária. A distribuição entre lojas é feita por Único
+      // Auto (ou fallback Intranet), não pela PCV.
+      void cnpj;
     }
     result.pcVariavelTotalLinhas = pcvTotal;
     result.pcVariavelLinhasAuto = pcvAuto + pcvPf;
