@@ -1,49 +1,40 @@
-## Diagnóstico
+## Ajustes finais no rateio
 
-Na aba **Power Curve Variável**:
-- O parser leu as 476 linhas (Y=476 ✓), mas o filtro descartou todas (X=0).
-- Como você confirmou antes que dava 250/476, e a única mudança é que "a tabela começa em uma coluna mais à frente", o problema mais provável é que o cabeçalho da coluna `subproduto2` (ou `user_id`) tem variação de nome que o matching exato (`norm()`) não está reconhecendo. Exemplos plausíveis: `Sub Produto 2`, `SUBPRODUTO 2`, `subproduto_2`, `sub_produto2`.
+### 1) PC Fixo — mais casas decimais (1/3 ↔ 2/3)
 
-Quando isso acontece:
-- `sheetToRowsByHeader(["CNPJ"])` (terceiro fallback) ainda lê 476 linhas.
-- `get(r, "subproduto2")` retorna `null` em todas porque procura match exato.
-- Todas viram "descartadas" → 0/476 = 0,00%.
+O input do percentual de PC Fixo está limitado a 3 casas (`step="0.001"`) e o valor padrão é `0.667`, o que arredonda e cria diferença de centavos contra o valor exato de 2/3.
 
-## Correção
+**Mudanças em `src/routes/rateios.novo.tsx`:**
+- Default de `pct.pcFixo`: `0.667` → `2/3` (≈ 0.6666666666666666).
+- Input de "Power Curve Fixo": `step="0.001"` → `step="0.00000001"` (e mostrar 6 casas no rótulo de % abaixo do input).
+- Aplicar o mesmo `step` aos demais campos para que o usuário possa digitar `0.56` ou frações exatas sem perda.
+- Exibir o % com mais precisão: `{(pct[k] * 100).toFixed(4)}%` no helper text (mantém leitura clara, sem cortar dígitos).
 
-### 1) `src/lib/parse-rateio.ts` — leitura tolerante das colunas da PCV
+Resultado: ao deixar o default ou ao digitar `0.66666667`, a fatia bate exatamente com o valor da planilha.
 
-Adicionar uma função auxiliar `getLoose(row, ...candidates)` que compara nomes de coluna **ignorando espaços, underscores, hífens e pontuação** (só letras/números). E aceitar variações conhecidas.
+### 2) F&I PEFIN PF — diferença de R$ 9,78
 
-Trocar nas linhas que leem PCV:
-- `get(r, "subproduto2")` → `getLoose(r, "subproduto2", "sub produto 2", "subproduto 2")`
-- `get(r, "user_id")` → `getLoose(r, "user_id", "userid", "usuario", "user")`
-- `get(r, "CNPJ")` → manter como está (CNPJ é estável).
+O sistema mostra **R$ 8.899,80** e a planilha **R$ 8.890,02** (diferença = R$ 9,78). A regra atual soma TODA linha cujo `Descrição de Produto NF` seja exatamente `CREDNET SERASA PEFIN PF TOP`, independentemente do logon (exceto Rejane, que é tratada antes).
 
-E na detecção do cabeçalho da PCV (`sheetToRowsByHeader`), passar a usar a mesma comparação tolerante para localizar a linha de header — assim, mesmo se o nome estiver com pontuação/underscore, o cabeçalho é reconhecido e usamos os fallbacks na ordem correta (`["CNPJ","subproduto2","user_id"]` primeiro).
+Diferença de R$ 9,78 é compatível com **1 ou 2 linhas extras** sendo somadas no PEFIN PF. Hipóteses prováveis:
 
-### 2) Diagnóstico mais útil (warning)
+- (a) Existe alguma linha `PEFIN PF TOP` com logon que **não deveria** entrar no F&I PF (ex.: outro logon específico que a planilha exclui manualmente).
+- (b) Existe variação na descrição (ex.: `CREDNET SERASA PEFIN PF` sem "TOP", ou com sufixo) que a planilha trata diferente.
 
-Hoje o warning só diz `0/476 (0,00%)`. Vou enriquecer:
-- Listar os **nomes reais de coluna detectados** na aba PCV (cabeçalho original, sem normalizar).
-- Mostrar os **3 valores distintos mais comuns** de `subproduto2`, com contagem.
-- Mostrar quantas linhas têm `user_id` preenchido.
+Como não consigo abrir a planilha daqui para confirmar a origem dos R$ 9,78, vou **adicionar diagnóstico** que torna isso visível na própria UI:
 
-Assim, se ainda assim falhar, a próxima tentativa já mostra exatamente qual nome esperar.
+**Mudanças em `src/lib/parse-rateio.ts`:**
+- Manter um detalhamento por logon das linhas que entraram em PEFIN PF (`Map<logon, { count, soma }>`).
+- Expor em `ParseResult` como `demoFiPefinPfPorLogon` (apenas para diagnóstico).
 
-### 3) Sem mudança de UI
+**Mudanças em `src/routes/rateios.novo.tsx`:**
+- Logo abaixo da linha "Demonstrativo — F&I PEFIN PF: …", listar (em texto pequeno) cada logon que somou ao PEFIN PF com count e total, ordenado por valor desc. Ex.:
+  ```
+  PEFIN PF por logon: PC CREDITO (215, R$ 8.890,02) · FULANO (2, R$ 9,78)
+  ```
 
-A prévia do Passo 3 já lê `pcvShareAuto` corretamente. Após o fix do parse, a porcentagem volta a mostrar ~52,52%.
+Com isso você consegue identificar imediatamente qual logon está somando os R$ 9,78 a mais e me diz a regra de exclusão (ex.: "ignorar logon X" ou "só somar logon PC CREDITO no PEFIN PF"). Aí faço o ajuste definitivo da regra de filtragem.
 
-## Arquivo proposto para edição
-
-- `src/lib/parse-rateio.ts`
-
-Nenhuma mudança em `compute-rateio.ts`, na UI ou no schema.
-
-## Como você verifica depois
-
-1. Reenvie a mesma planilha no Passo 1.
-2. No "Resumo extraído", a linha "Power Curve Variável" deve voltar a `250/476 linhas para Automóveis (52,52%)`.
-3. No Passo 3, a prévia mostrará "PC Adicional Auto = PC Adicional grupo × 52,52%".
-4. Se ainda der 0, o novo warning amarelo dirá quais nomes de coluna a planilha realmente tem — me mande esse texto e eu adiciono o caso.
+### Arquivos alterados
+- `src/routes/rateios.novo.tsx` — defaults/step/precision dos inputs e exibição do detalhamento PEFIN PF por logon.
+- `src/lib/parse-rateio.ts` — coleta e expõe `demoFiPefinPfPorLogon` no `ParseResult`.
