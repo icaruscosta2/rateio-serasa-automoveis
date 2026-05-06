@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 import { AppLayout } from "@/components/AppLayout";
@@ -8,9 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ChevronLeft, Download } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { ChevronLeft, Download, Trash2 } from "lucide-react";
 import { brl } from "@/lib/format";
 import { formatCnpj } from "@/lib/cnpj";
+import { deleteRateio } from "@/lib/delete-rateio";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/rateios/$id")({
@@ -45,9 +50,12 @@ interface RateioMeta {
 
 function RateioDetailPage() {
   const { id } = Route.useParams();
+  const navigate = useNavigate();
   const [meta, setMeta] = useState<RateioMeta | null>(null);
   const [rows, setRows] = useState<ResultRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -128,9 +136,14 @@ function RateioDetailPage() {
             })}
           </h1>
         </div>
-        <Button onClick={exportXlsx}>
-          <Download className="h-4 w-4" /> Exportar XLSX
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={exportXlsx}>
+            <Download className="h-4 w-4" /> Exportar XLSX
+          </Button>
+          <Button variant="destructive" onClick={() => setConfirmOpen(true)}>
+            <Trash2 className="h-4 w-4" /> Excluir
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-5 gap-3">
@@ -204,6 +217,42 @@ function RateioDetailPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <AlertDialog open={confirmOpen} onOpenChange={(o) => !deleting && setConfirmOpen(o)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir rateio</AlertDialogTitle>
+            <AlertDialogDescription>
+              Excluir o rateio de{" "}
+              {new Date(meta.mes_referencia + "T12:00:00").toLocaleDateString("pt-BR", {
+                month: "long", year: "numeric",
+              })}
+              ? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={async (e) => {
+                e.preventDefault();
+                setDeleting(true);
+                try {
+                  await deleteRateio(id);
+                  toast.success("Rateio excluído");
+                  navigate({ to: "/rateios" });
+                } catch (err: unknown) {
+                  toast.error(err instanceof Error ? err.message : "Erro ao excluir");
+                  setDeleting(false);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Excluindo…" : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
