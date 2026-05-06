@@ -217,6 +217,42 @@ function RateioDetailPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <AlertDialog open={confirmOpen} onOpenChange={(o) => !deleting && setConfirmOpen(o)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir rateio</AlertDialogTitle>
+            <AlertDialogDescription>
+              Excluir o rateio de{" "}
+              {new Date(meta.mes_referencia + "T12:00:00").toLocaleDateString("pt-BR", {
+                month: "long", year: "numeric",
+              })}
+              ? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={async (e) => {
+                e.preventDefault();
+                setDeleting(true);
+                try {
+                  await deleteRateio(id);
+                  toast.success("Rateio excluído");
+                  navigate({ to: "/rateios" });
+                } catch (err: unknown) {
+                  toast.error(err instanceof Error ? err.message : "Erro ao excluir");
+                  setDeleting(false);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Excluindo…" : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
