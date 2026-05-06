@@ -484,19 +484,34 @@ function NovoRateioPage() {
               ))}
             </div>
 
-            <div className="border rounded-md p-4 bg-muted/30 space-y-2">
-              <h3 className="font-medium">Prévia (Auto)</h3>
-              <div className="grid grid-cols-5 gap-2 text-sm">
-                <Badge variant="outline">Consumo Mín: {brl(preview.fatiaAuto.consumoMinimo)}</Badge>
-                <Badge variant="outline">PC Fixo: {brl(preview.fatiaAuto.pcFixo)}</Badge>
-                <Badge variant="outline">PC Adic: {brl(preview.fatiaAuto.pcAdicional)}</Badge>
-                <Badge variant="outline">F&I: {brl(preview.fatiaAuto.fi)}</Badge>
-                <Badge variant="outline">ADM: {brl(preview.fatiaAuto.adm)}</Badge>
-              </div>
-              <p className="text-sm pt-2">
-                Total Auto: <strong>{brl(preview.totals.total)}</strong> distribuído entre{" "}
-                <strong>{selectedCount}</strong> CNPJs ({matrizCount} matrizes).
-              </p>
+            <div className="border rounded-md p-4 bg-muted/30 space-y-3">
+              <h3 className="font-medium">Prévia (Automóveis)</h3>
+              {(() => {
+                const fiAuto = preview.fiPorSegmento["AUTOMOVEIS"] ?? 0;
+                const intraAuto = preview.intranetUniversoPorSegmento["AUTOMOVEIS"] ?? 0;
+                const intraTot = preview.intranetUniversoTotal;
+                const fiPct = intraTot > 0 ? (intraAuto / intraTot) * 100 : 0;
+                const pcvPct = preview.pcvShareAuto * 100;
+                return (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+                      <Badge variant="outline">Consumo Mín: {brl(preview.fatiaAuto.consumoMinimo)}</Badge>
+                      <Badge variant="outline">PC Fixo: {brl(preview.fatiaAuto.pcFixo)}</Badge>
+                      <Badge variant="outline">PC Adic: {brl(preview.fatiaAuto.pcAdicional)}</Badge>
+                      <Badge variant="outline">F&I: {brl(fiAuto)}</Badge>
+                      <Badge variant="outline">ADM: {brl(preview.fatiaAuto.adm)}</Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <div>PC Adicional Auto = PC Adicional grupo × {pcvPct.toFixed(2)}% (linhas Automóveis na PC Variável).</div>
+                      <div>F&I Auto = F&I grupo × {fiPct.toFixed(2)}% (Intranet Auto / Intranet universo {intraAuto}/{intraTot}).</div>
+                    </div>
+                    <p className="text-sm pt-2">
+                      Total distribuído: <strong>{brl(preview.totals.total)}</strong> entre{" "}
+                      <strong>{selectedCount}</strong> CNPJs ({matrizCount} matrizes).
+                    </p>
+                  </>
+                );
+              })()}
             </div>
 
             <div className="flex justify-between">
