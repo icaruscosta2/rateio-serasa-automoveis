@@ -49,6 +49,7 @@ interface RateioMeta {
 }
 
 function RateioDetailPage() {
+  const { id } = Route.useParams();
   const navigate = useNavigate();
   const [meta, setMeta] = useState<RateioMeta | null>(null);
   const [rows, setRows] = useState<ResultRow[]>([]);
