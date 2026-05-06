@@ -242,8 +242,8 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
         continue;
       }
 
-      // Outros usuários (não Rejane, não PC CREDITO) → F&I
-      result.fiGrupo += valor;
+      // Outros usuários (não Rejane, não PC CREDITO) → registrar mas NÃO somar no F&I
+      result.demoOutrosUsuariosNaoSomado += valor;
       outrosFi += valor;
     }
     result.demoFiPefinPfPorLogon = Array.from(pefinPfPorLogon.entries())
@@ -254,7 +254,7 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
       .sort((a, b) => b.soma - a.soma);
     if (outrosFi > 0) {
       result.warnings.push(
-        `F&I: somados R$ ${outrosFi.toFixed(2)} de consultas avulsas de outros usuários (não Rejane).`,
+        `Consultas avulsas de outros usuários (não somadas no F&I): R$ ${outrosFi.toFixed(2)}.`,
       );
     }
   }
