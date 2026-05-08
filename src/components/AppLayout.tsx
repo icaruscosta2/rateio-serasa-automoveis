@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect } from "react";
-import { LogOut, Building2, FileSpreadsheet } from "lucide-react";
+import { LogOut, Building2, FileSpreadsheet, Users, UserCog } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function AppLayout({ children }: { children?: React.ReactNode } = {}) {
@@ -48,6 +48,8 @@ export function AppLayout({ children }: { children?: React.ReactNode } = {}) {
         </div>
         {navItem("/rateios", "Rateios", FileSpreadsheet)}
         {navItem("/empresas", "Empresas", Building2)}
+        {navItem("/usuarios-pcv", "Usuários PCV", Users)}
+        {navItem("/gestores-logon", "Gestores ADM", UserCog)}
         <div className="mt-auto pt-4 border-t">
           <p className="px-2 text-xs text-muted-foreground truncate mb-2">{user.email}</p>
           <Button

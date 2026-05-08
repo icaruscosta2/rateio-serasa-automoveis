@@ -9,6 +9,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import {
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Upload, Search } from "lucide-react";
@@ -34,15 +37,30 @@ interface Company {
   cod_empresa_principal: number | null;
   segmento: string | null;
   bandeira: string | null;
+  tipo_negocio: string | null;
   is_matriz: boolean;
   ativo: boolean;
 }
+
+type TipoKey = "AUTOS" | "CONTABEIS";
+
+function getTipo(tipo_negocio: string | null): TipoKey {
+  const t = (tipo_negocio ?? "").toUpperCase();
+  if (t.includes("CONT")) return "CONTABEIS";
+  return "AUTOS";
+}
+
+const TIPO_LABELS: Record<TipoKey, string> = {
+  AUTOS: "Autos",
+  CONTABEIS: "Contábeis",
+};
+
+const TIPO_ORDER: TipoKey[] = ["AUTOS", "CONTABEIS"];
 
 function EmpresasPage() {
   const [rows, setRows] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
-  const [seg, setSeg] = useState<string>("AUTOMOVEIS");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
@@ -61,24 +79,45 @@ function EmpresasPage() {
     load();
   }, []);
 
+  // Filter by search query
   const filtered = useMemo(() => {
-    return rows.filter((r) => {
-      if (seg !== "TODOS" && r.segmento !== seg) return false;
-      if (!q) return true;
-      const ql = q.toLowerCase();
-      return (
+    if (!q) return rows;
+    const ql = q.toLowerCase();
+    return rows.filter(
+      (r) =>
         r.nome.toLowerCase().includes(ql) ||
         (r.apelido ?? "").toLowerCase().includes(ql) ||
         (r.cnpj ?? "").includes(q) ||
-        String(r.cod_empresa).includes(q)
-      );
-    });
-  }, [rows, q, seg]);
+        String(r.cod_empresa).includes(q) ||
+        (r.bandeira ?? "").toLowerCase().includes(ql),
+    );
+  }, [rows, q]);
+
+  // Two-level grouping: tipo → bandeira → companies
+  const grouped = useMemo(() => {
+    const result: Record<TipoKey, Map<string, Company[]>> = {
+      AUTOS: new Map(),
+      CONTABEIS: new Map(),
+    };
+    for (const r of filtered) {
+      const tipo = getTipo(r.tipo_negocio);
+      const bandeira = r.bandeira ?? "(sem bandeira)";
+      if (!result[tipo].has(bandeira)) result[tipo].set(bandeira, []);
+      result[tipo].get(bandeira)!.push(r);
+    }
+    // Sort bandeiras alphabetically within each tipo
+    for (const tipo of TIPO_ORDER) {
+      result[tipo] = new Map([...result[tipo]].sort(([a], [b]) => a.localeCompare(b)));
+    }
+    return result;
+  }, [filtered]);
 
   const stats = useMemo(() => {
-    const auto = rows.filter((r) => r.segmento === "AUTOMOVEIS" && r.ativo);
+    const auto = rows.filter((r) => r.ativo);
     return {
-      autoAtivas: auto.length,
+      total: rows.length,
+      autos: rows.filter((r) => getTipo(r.tipo_negocio) === "AUTOS").length,
+      contabeis: rows.filter((r) => getTipo(r.tipo_negocio) === "CONTABEIS").length,
       matrizes: auto.filter((r) => r.is_matriz).length,
     };
   }, [rows]);
@@ -119,6 +158,7 @@ function EmpresasPage() {
             cod_matriz: Number(get("COD_MATRIZ")) || null,
             segmento: get("SEGMENTO") ? String(get("SEGMENTO")).toUpperCase() : null,
             bandeira: get("BANDEIRA") ? String(get("BANDEIRA")) : null,
+            tipo_negocio: get("TIPO_NEGOCIO", "TIPO NEGOCIO") ? String(get("TIPO_NEGOCIO", "TIPO NEGOCIO")) : null,
             grupo_empresa: get("GRUPO_EMPRESA") ? String(get("GRUPO_EMPRESA")) : null,
             is_matriz: principal !== null && principal === cod,
             ativo: true,
@@ -161,27 +201,35 @@ function EmpresasPage() {
         <p className="text-muted-foreground">Base do grupo Revemar</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Total cadastradas</CardDescription>
-            <CardTitle className="text-3xl">{rows.length}</CardTitle>
+            <CardTitle className="text-3xl">{stats.total}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Automóveis ativas</CardDescription>
-            <CardTitle className="text-3xl">{stats.autoAtivas}</CardTitle>
+            <CardDescription>Autos</CardDescription>
+            <CardTitle className="text-3xl">{stats.autos}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Matrizes Auto</CardDescription>
+            <CardDescription>Contábeis</CardDescription>
+            <CardTitle className="text-3xl">{stats.contabeis}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Matrizes</CardDescription>
             <CardTitle className="text-3xl">{stats.matrizes}</CardTitle>
           </CardHeader>
         </Card>
       </div>
 
+      {/* Upload */}
       <Card>
         <CardHeader>
           <CardTitle>Importar / Atualizar planilha</CardTitle>
@@ -207,30 +255,19 @@ function EmpresasPage() {
         </CardContent>
       </Card>
 
+      {/* Lista com agrupamento */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-4">
             <CardTitle>Lista</CardTitle>
-            <div className="flex items-center gap-2">
-              <select
-                className="h-9 rounded-md border bg-background px-3 text-sm"
-                value={seg}
-                onChange={(e) => setSeg(e.target.value)}
-              >
-                <option value="AUTOMOVEIS">Automóveis</option>
-                <option value="PESADOS">Pesados</option>
-                <option value="MOTOCICLETAS">Motos</option>
-                <option value="TODOS">Todos</option>
-              </select>
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar nome, CNPJ, código…"
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  className="pl-8 w-72"
-                />
-              </div>
+            <div className="relative">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar nome, CNPJ, bandeira, código…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                className="pl-8 w-80"
+              />
             </div>
           </div>
         </CardHeader>
@@ -238,56 +275,96 @@ function EmpresasPage() {
           {loading ? (
             <p className="text-sm text-muted-foreground">Carregando…</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-16">Cód</TableHead>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>CNPJ</TableHead>
-                  <TableHead>UF</TableHead>
-                  <TableHead>Bandeira</TableHead>
-                  <TableHead className="text-center">Matriz</TableHead>
-                  <TableHead className="text-center">Ativo</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((r) => (
-                  <TableRow key={r.cod_empresa}>
-                    <TableCell className="font-mono text-xs">{r.cod_empresa}</TableCell>
-                    <TableCell>
-                      <div>{r.nome}</div>
-                      {r.apelido && (
-                        <div className="text-xs text-muted-foreground">{r.apelido}</div>
-                      )}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">{r.cnpj}</TableCell>
-                    <TableCell>{r.estado}</TableCell>
-                    <TableCell>
-                      {r.bandeira && <Badge variant="outline">{r.bandeira}</Badge>}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Checkbox
-                        checked={r.is_matriz}
-                        onCheckedChange={(v) => toggleField(r.cod_empresa, "is_matriz", !!v)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Checkbox
-                        checked={r.ativo}
-                        onCheckedChange={(v) => toggleField(r.cod_empresa, "ativo", !!v)}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {!filtered.length && (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                      Nenhuma empresa. Importe a planilha acima.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+            <Accordion type="multiple" className="w-full" defaultValue={["AUTOS"]}>
+              {TIPO_ORDER.map((tipo) => {
+                const bandeiraMap = grouped[tipo];
+                const totalTipo = Array.from(bandeiraMap.values()).reduce(
+                  (acc, arr) => acc + arr.length,
+                  0,
+                );
+                if (totalTipo === 0) return null;
+                return (
+                  <AccordionItem key={tipo} value={tipo}>
+                    <AccordionTrigger className="hover:no-underline">
+                      <div className="flex items-center gap-3 flex-1">
+                        <span className="font-bold text-base">{TIPO_LABELS[tipo]}</span>
+                        <Badge variant="secondary">{totalTipo}</Badge>
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pb-0">
+                      <Accordion type="multiple" className="w-full pl-4">
+                        {Array.from(bandeiraMap.entries()).map(([bandeira, lojas]) => (
+                          <AccordionItem key={bandeira} value={`${tipo}-${bandeira}`}>
+                            <AccordionTrigger className="hover:no-underline py-3">
+                              <div className="flex items-center gap-3 flex-1">
+                                <span className="font-semibold">{bandeira}</span>
+                                <Badge variant="outline">{lojas.length}</Badge>
+                              </div>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="w-16">Cód</TableHead>
+                                    <TableHead>Nome</TableHead>
+                                    <TableHead>CNPJ</TableHead>
+                                    <TableHead>UF / Cidade</TableHead>
+                                    <TableHead className="text-center w-20">Matriz</TableHead>
+                                    <TableHead className="text-center w-20">Ativo</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {lojas.map((r) => (
+                                    <TableRow key={r.cod_empresa}>
+                                      <TableCell className="font-mono text-xs">
+                                        {r.cod_empresa}
+                                      </TableCell>
+                                      <TableCell>
+                                        <div>{r.nome}</div>
+                                        {r.apelido && (
+                                          <div className="text-xs text-muted-foreground">
+                                            {r.apelido}
+                                          </div>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="font-mono text-xs">{r.cnpj}</TableCell>
+                                      <TableCell className="text-xs">
+                                        {[r.estado, r.cidade].filter(Boolean).join(" · ")}
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        <Checkbox
+                                          checked={r.is_matriz}
+                                          onCheckedChange={(v) =>
+                                            toggleField(r.cod_empresa, "is_matriz", !!v)
+                                          }
+                                        />
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        <Checkbox
+                                          checked={r.ativo}
+                                          onCheckedChange={(v) =>
+                                            toggleField(r.cod_empresa, "ativo", !!v)
+                                          }
+                                        />
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </AccordionContent>
+                          </AccordionItem>
+                        ))}
+                      </Accordion>
+                    </AccordionContent>
+                  </AccordionItem>
+                );
+              })}
+              {filtered.length === 0 && (
+                <p className="text-center text-muted-foreground py-8 text-sm">
+                  Nenhuma empresa encontrada.
+                </p>
+              )}
+            </Accordion>
           )}
         </CardContent>
       </Card>

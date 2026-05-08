@@ -7,7 +7,8 @@ export interface ParseResult {
   pcFixoGrupo: number;
   pcAdicionalGrupo: number; // logon "PC CREDITO" menos F&I PEFIN PF/PJ
   fiGrupo: number; // PEFIN PF + PJ (somente logon PC CREDITO)
-  admRateadoGrupo: number; // linhas da REJANE
+  admRateadoGrupo: number; // total de todos os gestores (todos os segmentos)
+  admRateadoPorSegmento: Record<string, number>; // separado por segmento do gestor
   // Diagnóstico do Demonstrativo
   demoTotalLogonPcCredito: number;
   demoFiPefinPf: number;
@@ -31,6 +32,10 @@ export interface ParseResult {
   // É essa proporção que define quanto do PC Adicional vai para Automóveis.
   pcVariavelTotalLinhas: number;
   pcVariavelLinhasAuto: number; // = soma dos numeradores filtrados
+  // Usuários de "Consulta PF" encontrados na planilha que NÃO estão no cadastro
+  pcvUsuariosDesconhecidos: string[];
+  // Logons do Demonstrativo (não PC CREDITO) que NÃO estão no cadastro de Gestores
+  admLogonsDesconhecidos: string[];
   // Diagnóstico
   abasEncontradas: string[];
   abasFaltando: string[];
@@ -42,6 +47,7 @@ const PRODUTO_PC_FIXO = "POWERCURVE CREDITO CONSUMO MINIMO";
 const LOGON_PC_CREDITO = "PC CREDITO";
 const FI_PRODUTOS = ["CREDNET SERASA PEFIN PF TOP", "CREDNET SERASA PEFIN PJ TOP"];
 const REJANE = "REJANE";
+const MARCIA_GOMES = "MARCIA GOMES";
 
 function norm(s: string): string {
   return s
@@ -147,7 +153,18 @@ function getLoose(row: Record<string, unknown>, ...candidates: string[]): unknow
   return null;
 }
 
-export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
+export interface EmpresaParaMatch {
+  nome: string;
+  apelido: string | null;
+  cnpj_normalizado: string | null;
+}
+
+export function parseRateioWorkbook(
+  buffer: ArrayBuffer,
+  pcvUsuariosPf?: Map<string, string>,
+  empresas?: EmpresaParaMatch[],
+  gestoresLogon?: Map<string, string>, // logon normalizado → segmento
+): ParseResult {
   const wb = XLSX.read(buffer);
   const result: ParseResult = {
     consumoMinimoGrupo: 0,
@@ -155,6 +172,7 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     pcAdicionalGrupo: 0,
     fiGrupo: 0,
     admRateadoGrupo: 0,
+    admRateadoPorSegmento: {},
     demoTotalLogonPcCredito: 0,
     demoFiPefinPf: 0,
     demoFiPefinPj: 0,
@@ -168,6 +186,8 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     pcVariavelPorCnpj: new Map(),
     pcVariavelTotalLinhas: 0,
     pcVariavelLinhasAuto: 0,
+    pcvUsuariosDesconhecidos: [],
+    admLogonsDesconhecidos: [],
     abasEncontradas: wb.SheetNames,
     abasFaltando: [],
     warnings: [],
@@ -191,6 +211,7 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     let outrosFi = 0;
     const pefinPfPorLogon = new Map<string, { count: number; soma: number }>();
     const pefinPjPorLogon = new Map<string, { count: number; soma: number }>();
+    const admDesconhecidosSet = new Set<string>();
     for (const r of rows) {
       const produto = norm(String(get(r, "Descrição de Produto NF") ?? ""));
       const nomeLogon = norm(String(get(r, "Nome do Logon") ?? ""));
@@ -209,12 +230,19 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
       }
 
       const isFiProduto = FI_PRODUTOS.some((p) => produto === norm(p));
-      const isRejane = nomeLogon.includes(REJANE);
+      // ADM: se gestoresLogon fornecido, usa o mapa; senão fallback para Rejane/Márcia.
+      const isAdm = gestoresLogon
+        ? gestoresLogon.has(nomeLogon)
+        : (nomeLogon.includes(REJANE) || nomeLogon.includes(MARCIA_GOMES));
       const isLogonPcCredito = nomeLogon === LOGON_PC_CREDITO;
 
-      // ADM Rateado: tudo da Rejane
-      if (isRejane) {
+      // Consultas ADM Avulsas: tudo dos gestores cadastrados, separado por segmento.
+      if (isAdm) {
         result.admRateadoGrupo += valor;
+        // Segmento do gestor: usa o mapa se disponível, senão fallback AUTOMOVEIS.
+        const admSeg = gestoresLogon?.get(nomeLogon) ?? "AUTOMOVEIS";
+        result.admRateadoPorSegmento[admSeg] =
+          (result.admRateadoPorSegmento[admSeg] ?? 0) + valor;
         continue;
       }
 
@@ -242,9 +270,13 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
         continue;
       }
 
-      // Outros usuários (não Rejane, não PC CREDITO) → registrar mas NÃO somar no F&I
+      // Outros logons (não gestor, não PC CREDITO) → registrar mas NÃO somar no rateio.
+      // Se gestoresLogon foi passado, coleta logons desconhecidos para o popup.
       result.demoOutrosUsuariosNaoSomado += valor;
       outrosFi += valor;
+      if (gestoresLogon && nomeLogon && !gestoresLogon.has(nomeLogon)) {
+        admDesconhecidosSet.add(nomeLogon);
+      }
     }
     result.demoFiPefinPfPorLogon = Array.from(pefinPfPorLogon.entries())
       .map(([logon, v]) => ({ logon, count: v.count, soma: v.soma }))
@@ -252,9 +284,13 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
     result.demoFiPefinPjPorLogon = Array.from(pefinPjPorLogon.entries())
       .map(([logon, v]) => ({ logon, count: v.count, soma: v.soma }))
       .sort((a, b) => b.soma - a.soma);
+    result.admLogonsDesconhecidos = Array.from(admDesconhecidosSet);
     if (outrosFi > 0) {
+      const descLabel = admDesconhecidosSet.size > 0
+        ? ` Logons não classificados: ${Array.from(admDesconhecidosSet).join(", ")}.`
+        : "";
       result.warnings.push(
-        `Consultas avulsas de outros usuários (não somadas no F&I): R$ ${outrosFi.toFixed(2)}.`,
+        `Consultas ADM Avulsas de logons não classificados: R$ ${outrosFi.toFixed(2)}.${descLabel}`,
       );
     }
   }
@@ -298,17 +334,42 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
   const unicoSheet = findSheet(wb, ["UNICOAUTO", "Unico Auto", "Único Auto"]);
   if (!unicoSheet) {
     result.warnings.push(
-      "Aba UNICOAUTO não encontrada — PC Adicional será rateado pela Intranet (fallback).",
+      "Aba UNICOAUTO não encontrada — PC Adicional não poderá ser distribuído por empresa.",
     );
   } else {
-    const rows = sheetToRowsByHeader(wb.Sheets[unicoSheet], ["CNPJ", "Estabelecimento"]);
+    const rows = sheetToRowsByHeader(wb.Sheets[unicoSheet], ["Estabelecimento"]);
     if (rows.length === 0) {
-      result.warnings.push("UNICOAUTO: cabeçalho 'CNPJ / Estabelecimento' não localizado.");
-    }
-    for (const r of rows) {
-      const cnpj = normalizeCnpj(get(r, "CNPJ"));
-      if (!cnpj) continue;
-      result.unicoAutoPorCnpj.set(cnpj, (result.unicoAutoPorCnpj.get(cnpj) ?? 0) + 1);
+      result.warnings.push("UNICOAUTO: coluna 'Estabelecimento' não localizada.");
+    } else {
+      // Monta lookup: nome normalizado → cnpj_normalizado, a partir do cadastro de empresas.
+      const nomeParaCnpj = new Map<string, string>();
+      for (const e of empresas ?? []) {
+        if (!e.cnpj_normalizado) continue;
+        nomeParaCnpj.set(norm(e.nome), e.cnpj_normalizado);
+        if (e.apelido) nomeParaCnpj.set(norm(e.apelido), e.cnpj_normalizado);
+      }
+
+      const naoEncontrados = new Set<string>();
+      for (const r of rows) {
+        const nomeRaw = String(getLoose(r, "Estabelecimento", "ESTABELECIMENTO") ?? "").trim();
+        if (!nomeRaw) continue;
+        const nomeNorm = norm(nomeRaw);
+
+        // Apenas match exato (nome ou apelido) — match parcial causa falsos positivos.
+        const cnpj = nomeParaCnpj.get(nomeNorm);
+
+        if (cnpj) {
+          result.unicoAutoPorCnpj.set(cnpj, (result.unicoAutoPorCnpj.get(cnpj) ?? 0) + 1);
+        } else {
+          naoEncontrados.add(nomeRaw);
+        }
+      }
+
+      if (naoEncontrados.size > 0) {
+        result.warnings.push(
+          `UNICOAUTO: ${naoEncontrados.size} estabelecimento(s) não encontrado(s) no cadastro: ${[...naoEncontrados].slice(0, 5).join(", ")}${naoEncontrados.size > 5 ? ` (e mais ${naoEncontrados.size - 5})` : ""}.`,
+        );
+      }
     }
   }
 
@@ -339,17 +400,23 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
       );
     }
     // Filtro: subproduto2 = "Automóveis" OU
-    //        (subproduto2 = "Consulta PF" E user_id ∈ allowlist)
-    const PCV_USERS_PF = new Set([
-      "aleff.cordeiro@revemar.com.br",
-      "ana.vitoria@revemar.com.br",
-    ].map((s) => s.toLowerCase()));
+    //        (subproduto2 = "Consulta PF" E user_id mapeado a um segmento no cadastro)
+    // O mapa vem do banco (tabela pcv_usuarios): user_id → segmento.
+    // Se não for passado, nenhuma "Consulta PF" será contabilizada.
+    const pcvUserSegmento = new Map<string, string>();
+    if (pcvUsuariosPf) {
+      for (const [uid, seg] of pcvUsuariosPf) {
+        pcvUserSegmento.set(uid.toLowerCase(), seg.toUpperCase());
+      }
+    }
     let pcvAuto = 0;
-    let pcvPf = 0;
+    let pcvPfAuto = 0;    // Consulta PF mapeada para AUTOMOVEIS
+    let pcvPfOutros = 0;  // Consulta PF mapeada para outros segmentos
     let pcvDescartadas = 0;
     let pcvTotal = 0;
     const sub2Counts = new Map<string, number>();
     let userPreenchido = 0;
+    const desconhecidosSet = new Set<string>();
     for (const r of rows) {
       pcvTotal++;
       const sub2Raw = String(getLoose(r, "subproduto2", "sub produto 2", "subproduto 2") ?? "");
@@ -360,23 +427,38 @@ export function parseRateioWorkbook(buffer: ArrayBuffer): ParseResult {
       if (sub2Raw.trim()) sub2Counts.set(sub2Raw.trim(), (sub2Counts.get(sub2Raw.trim()) ?? 0) + 1);
       if (user) userPreenchido++;
       const isAuto = sub2 === norm("Automóveis") || sub2 === norm("Automoveis");
-      const isPfPermitido =
-        (sub2 === norm("Consulta PF") || sub2.includes("CONSULTA PF")) &&
-        PCV_USERS_PF.has(user);
+      const isConsultaPf = sub2 === norm("Consulta PF") || sub2.includes("CONSULTA PF");
+      if (isConsultaPf && user && !pcvUserSegmento.has(user)) {
+        // Usuário de Consulta PF não cadastrado — registra para o popup
+        desconhecidosSet.add(user);
+      }
+      const segmentoPf = isConsultaPf ? pcvUserSegmento.get(user) : undefined;
+      const isPfPermitido = isConsultaPf && segmentoPf !== undefined;
       if (!isAuto && !isPfPermitido) {
         pcvDescartadas++;
         continue;
       }
+      // Conta como Automóveis se subproduto2="Automóveis" OU se o usuário de
+      // "Consulta PF" está mapeado para AUTOMOVEIS.
+      // Usuários mapeados para outros segmentos (PESADOS, MOTOCICLETAS) NÃO
+      // entram na fatia de Automóveis — são contados separadamente.
       if (isAuto) pcvAuto++;
-      else pcvPf++;
+      else if (segmentoPf === "AUTOMOVEIS") pcvPfAuto++;
+      else pcvPfOutros++;
     }
+    result.pcvUsuariosDesconhecidos = Array.from(desconhecidosSet);
     result.pcVariavelTotalLinhas = pcvTotal;
-    result.pcVariavelLinhasAuto = pcvAuto + pcvPf;
-    const pctAuto = pcvTotal > 0 ? ((pcvAuto + pcvPf) / pcvTotal) * 100 : 0;
+    result.pcVariavelLinhasAuto = pcvAuto + pcvPfAuto;
+    const pctAuto = pcvTotal > 0 ? ((pcvAuto + pcvPfAuto) / pcvTotal) * 100 : 0;
     result.warnings.push(
-      `Power Curve Variável: ${pcvAuto + pcvPf}/${pcvTotal} linhas para Automóveis (${pctAuto.toFixed(2)}%) — ${pcvAuto} Automóveis + ${pcvPf} Consulta PF (Aleff/Ana); ${pcvDescartadas} descartadas.`,
+      `Power Curve Variável: ${pcvAuto + pcvPfAuto}/${pcvTotal} linhas para Automóveis (${pctAuto.toFixed(2)}%) — ${pcvAuto} Automóveis + ${pcvPfAuto} Consulta PF Auto; ${pcvPfOutros} Consulta PF outros segmentos; ${pcvDescartadas} descartadas.`,
     );
-    if (pcvTotal > 0 && pcvAuto + pcvPf === 0) {
+    if (desconhecidosSet.size > 0) {
+      result.warnings.push(
+        `Power Curve Variável: ${desconhecidosSet.size} usuário(s) de "Consulta PF" não cadastrado(s): ${Array.from(desconhecidosSet).join(", ")} — não contabilizados até classificação.`,
+      );
+    }
+    if (pcvTotal > 0 && pcvAuto + pcvPfAuto === 0) {
       const colsDetectadas = rows[0] ? Object.keys(rows[0]).join(" | ") : "(nenhuma)";
       const topSub2 = Array.from(sub2Counts.entries())
         .sort((a, b) => b[1] - a[1])

@@ -20,6 +20,10 @@ import { brl, intBR } from "@/lib/format";
 import { computeRateio } from "@/lib/compute-rateio";
 import { isBandeiraExcluida } from "@/lib/segmentos";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const Route = createFileRoute("/rateios/novo")({
   component: () => (
@@ -59,6 +63,25 @@ function NovoRateioPage() {
     consumoMinimo: 0.56, pcFixo: 2 / 3, pcAdicional: 0.56, fi: 0.56, adm: 0.56,
   });
   const [saving, setSaving] = useState(false);
+
+  // Popup de usuários desconhecidos de "Consulta PF"
+  const [pcvDialog, setPcvDialog] = useState<{
+    open: boolean;
+    file: File | null;
+    usuarios: string[];
+    segmentos: Record<string, string>; // email → segmento escolhido (ou "" para ignorar)
+  }>({ open: false, file: null, usuarios: [], segmentos: {} });
+  const [pcvSaving, setPcvSaving] = useState(false);
+
+  // Popup de logons desconhecidos de Consultas ADM Avulsas
+  const [admDialog, setAdmDialog] = useState<{
+    open: boolean;
+    file: File | null;
+    logons: string[];
+    segmentos: Record<string, string>; // logon → segmento escolhido (ou "" para ignorar)
+    extraPcvMap: Map<string, string>;   // repassa o mapa PCV já resolvido
+  }>({ open: false, file: null, logons: [], segmentos: {}, extraPcvMap: new Map() });
+  const [admSaving, setAdmSaving] = useState(false);
 
   useEffect(() => {
     supabase
@@ -102,22 +125,67 @@ function NovoRateioPage() {
             .replace(/[\u0300-\u036f]/g, "")
             .toUpperCase()
             .trim();
-          const offByDefault = b === "MASSEY" || b === "JCB" || b === "VW CAMINHOES";
+          const offByDefault =
+            b === "MASSEY" || b === "JCB" || b === "VW CAMINHOES" ||
+            b === "LOCADORA" || b === "CORRETORA" || b === "RGN";
           init[r.cod_empresa] = { incluida: !offByDefault, matriz: r.is_matriz };
         });
         setSel(init);
       });
   }, []);
 
-  const doParse = async (f: File) => {
+  const doParse = async (
+    f: File,
+    extraPcvMap?: Map<string, string>,
+    extraGestoresMap?: Map<string, string>,
+  ) => {
     setParsing(true);
     try {
       const buf = await f.arrayBuffer();
-      const result = parseRateioWorkbook(buf);
+      const [{ data: pcvData }, { data: gestoresData }] = await Promise.all([
+        supabase.from("pcv_usuarios").select("user_id, segmento").eq("ativo", true),
+        supabase.from("gestores_logon").select("logon, segmento").eq("ativo", true),
+      ]);
+      const basePcvMap = new Map((pcvData ?? []).map((u) => [u.user_id.toLowerCase(), u.segmento]));
+      const baseGestoresMap = new Map(
+        (gestoresData ?? []).map((g) => [g.logon.toUpperCase().trim(), g.segmento]),
+      );
+      // Merge extra classifications (from popups) on top of DB data
+      const pcvUsuariosPf = extraPcvMap
+        ? new Map([...basePcvMap, ...extraPcvMap])
+        : basePcvMap;
+      const gestoresLogon = extraGestoresMap
+        ? new Map([...baseGestoresMap, ...extraGestoresMap])
+        : baseGestoresMap;
+      const result = parseRateioWorkbook(buf, pcvUsuariosPf, companies, gestoresLogon);
       if (result.abasFaltando.length) {
         toast.warning(
           `Abas não encontradas: ${result.abasFaltando.join(", ")}. Encontradas: ${result.abasEncontradas.join(", ")}`,
         );
+      }
+      // If there are unknown "Consulta PF" users, open the PCV classification dialog
+      if (result.pcvUsuariosDesconhecidos.length > 0) {
+        const initSegmentos: Record<string, string> = {};
+        for (const u of result.pcvUsuariosDesconhecidos) initSegmentos[u] = "";
+        setPcvDialog({ open: true, file: f, usuarios: result.pcvUsuariosDesconhecidos, segmentos: initSegmentos });
+        setParsed(result);
+        setFile(f);
+        return;
+      }
+      // If there are unknown ADM logons, open the Gestores classification dialog
+      if (result.admLogonsDesconhecidos.length > 0) {
+        const initSegmentos: Record<string, string> = {};
+        for (const l of result.admLogonsDesconhecidos) initSegmentos[l] = "";
+        setAdmDialog({
+          open: true,
+          file: f,
+          logons: result.admLogonsDesconhecidos,
+          segmentos: initSegmentos,
+          extraPcvMap: extraPcvMap ?? new Map(),
+        });
+        setParsed(result);
+        setFile(f);
+        return;
       }
       setParsed(result);
       setFile(f);
@@ -125,6 +193,56 @@ function NovoRateioPage() {
       toast.error(e instanceof Error ? e.message : "Falha ao ler planilha");
     } finally {
       setParsing(false);
+    }
+  };
+
+  const handlePcvDialogConfirm = async () => {
+    if (!pcvDialog.file) return;
+    setPcvSaving(true);
+    try {
+      // Save only the users with a chosen segment (non-empty)
+      const toSave = Object.entries(pcvDialog.segmentos).filter(([, seg]) => seg !== "");
+      if (toSave.length > 0) {
+        const { error } = await supabase.from("pcv_usuarios").upsert(
+          toSave.map(([user_id, segmento]) => ({ user_id, segmento, ativo: true })),
+          { onConflict: "user_id" },
+        );
+        if (error) throw error;
+        toast.success(`${toSave.length} usuário(s) cadastrado(s).`);
+      }
+      // Build extra map (all chosen + those skipped are simply absent → won't count)
+      const extraMap = new Map(toSave.map(([u, s]) => [u, s]));
+      setPcvDialog({ open: false, file: null, usuarios: [], segmentos: {} });
+      // Re-parse with the new classifications included
+      await doParse(pcvDialog.file, extraMap, undefined);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao salvar usuários");
+    } finally {
+      setPcvSaving(false);
+    }
+  };
+
+  const handleAdmDialogConfirm = async () => {
+    if (!admDialog.file) return;
+    setAdmSaving(true);
+    try {
+      const toSave = Object.entries(admDialog.segmentos).filter(([, seg]) => seg !== "");
+      if (toSave.length > 0) {
+        const { error } = await supabase.from("gestores_logon").upsert(
+          toSave.map(([logon, segmento]) => ({ logon, segmento, ativo: true })),
+          { onConflict: "logon" },
+        );
+        if (error) throw error;
+        toast.success(`${toSave.length} gestor(es) cadastrado(s).`);
+      }
+      const extraGestoresMap = new Map(toSave.map(([l, s]) => [l, s]));
+      const savedPcvMap = admDialog.extraPcvMap;
+      setAdmDialog({ open: false, file: null, logons: [], segmentos: {}, extraPcvMap: new Map() });
+      await doParse(admDialog.file, savedPcvMap.size > 0 ? savedPcvMap : undefined, extraGestoresMap);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao salvar gestores");
+    } finally {
+      setAdmSaving(false);
     }
   };
 
@@ -300,7 +418,7 @@ function NovoRateioPage() {
                   <div>Power Curve Fixo: <strong>{brl(parsed.pcFixoGrupo)}</strong></div>
                   <div>PC Adicional (logon PC CREDITO): <strong>{brl(parsed.pcAdicionalGrupo)}</strong></div>
                   <div>F&I / Cadastros: <strong>{brl(parsed.fiGrupo)}</strong></div>
-                  <div>ADM Rateado (Rejane): <strong>{brl(parsed.admRateadoGrupo)}</strong></div>
+                  <div>Consultas ADM Avulsas (Rejane e Márcia) — Auto: <strong>{brl(parsed.admRateadoGrupo)}</strong></div>
                   <div className="text-muted-foreground">Total grupo: <strong>{brl(parsed.consumoMinimoGrupo + parsed.pcFixoGrupo + parsed.pcAdicionalGrupo + parsed.fiGrupo + parsed.admRateadoGrupo)}</strong></div>
                 </div>
                 <div className="text-xs text-muted-foreground">
@@ -467,6 +585,102 @@ function NovoRateioPage() {
         </Card>
       )}
 
+      {/* ---- Popup: classificar usuários de "Consulta PF" não cadastrados ---- */}
+      <Dialog open={pcvDialog.open} onOpenChange={(v) => !v && setPcvDialog((d) => ({ ...d, open: false }))}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Usuários desconhecidos — Consulta PF</DialogTitle>
+            <DialogDescription>
+              Os e-mails abaixo aparecem na aba <strong>Power Curve Variável</strong> com subproduto
+              "Consulta PF", mas não estão cadastrados. Escolha o segmento de cada um ou deixe em
+              branco para ignorar neste rateio.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 max-h-72 overflow-y-auto py-1">
+            {pcvDialog.usuarios.map((u) => (
+              <div key={u} className="flex items-center gap-3">
+                <span className="font-mono text-xs flex-1 truncate">{u}</span>
+                <Select
+                  value={pcvDialog.segmentos[u] ?? ""}
+                  onValueChange={(v) =>
+                    setPcvDialog((d) => ({ ...d, segmentos: { ...d.segmentos, [u]: v } }))
+                  }
+                >
+                  <SelectTrigger className="w-44">
+                    <SelectValue placeholder="Ignorar" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="AUTOMOVEIS">AUTOMOVEIS</SelectItem>
+                    <SelectItem value="PESADOS">PESADOS</SelectItem>
+                    <SelectItem value="MOTOCICLETAS">MOTOCICLETAS</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setPcvDialog((d) => ({ ...d, open: false }))}
+              disabled={pcvSaving}
+            >
+              Fechar (manter sem classificar)
+            </Button>
+            <Button onClick={handlePcvDialogConfirm} disabled={pcvSaving}>
+              {pcvSaving ? "Salvando…" : "Salvar e re-calcular"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ---- Popup: classificar logons de Consultas ADM Avulsas não cadastrados ---- */}
+      <Dialog open={admDialog.open} onOpenChange={(v) => !v && setAdmDialog((d) => ({ ...d, open: false }))}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Logons desconhecidos — Consultas ADM Avulsas</DialogTitle>
+            <DialogDescription>
+              Os logons abaixo aparecem no <strong>Demonstrativo</strong> mas não estão cadastrados
+              como gestores. Escolha o segmento de cada um para classificá-los como{" "}
+              <strong>Consultas ADM Avulsas</strong>, ou deixe em branco para ignorar neste rateio.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 max-h-72 overflow-y-auto py-1">
+            {admDialog.logons.map((l) => (
+              <div key={l} className="flex items-center gap-3">
+                <span className="font-mono text-sm flex-1 truncate">{l}</span>
+                <Select
+                  value={admDialog.segmentos[l] ?? ""}
+                  onValueChange={(v) =>
+                    setAdmDialog((d) => ({ ...d, segmentos: { ...d.segmentos, [l]: v } }))
+                  }
+                >
+                  <SelectTrigger className="w-44">
+                    <SelectValue placeholder="Ignorar" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="AUTOMOVEIS">AUTOMOVEIS</SelectItem>
+                    <SelectItem value="PESADOS">PESADOS</SelectItem>
+                    <SelectItem value="MOTOCICLETAS">MOTOCICLETAS</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setAdmDialog((d) => ({ ...d, open: false }))}
+              disabled={admSaving}
+            >
+              Fechar (manter sem classificar)
+            </Button>
+            <Button onClick={handleAdmDialogConfirm} disabled={admSaving}>
+              {admSaving ? "Salvando…" : "Salvar e re-calcular"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {step === 3 && parsed && preview && (
         <Card>
           <CardHeader>
@@ -515,7 +729,7 @@ function NovoRateioPage() {
                       <Badge variant="outline">PC Fixo: {brl(preview.fatiaAuto.pcFixo)}</Badge>
                       <Badge variant="outline">PC Adic: {brl(preview.fatiaAuto.pcAdicional)}</Badge>
                       <Badge variant="outline">F&I: {brl(fiAuto)}</Badge>
-                      <Badge variant="outline">ADM: {brl(preview.fatiaAuto.adm)}</Badge>
+                      <Badge variant="outline">Consul. ADM: {brl(preview.fatiaAuto.adm)}</Badge>
                     </div>
                     <div className="text-xs text-muted-foreground space-y-1">
                       <div>PC Adicional Auto = PC Adicional grupo × {pcvPct.toFixed(2)}% (linhas Automóveis na PC Variável).</div>

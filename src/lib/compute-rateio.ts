@@ -76,8 +76,9 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
         ? parsed.pcAdicionalGrupo * pcvShareAuto
         : parsed.pcAdicionalGrupo, // sem PCV → fallback: tudo para Auto
     fi: parsed.fiGrupo, // 100% do grupo, dividido pela proporção de Intranet por segmento
-    // ADM Rateado (Rejane) vai 100% para Automóveis
-    adm: parsed.admRateadoGrupo,
+    // Consultas ADM Avulsas (Rejane + Márcia) vai 100% para Automóveis.
+    // Usa apenas a fatia do segmento AUTOMOVEIS para não incluir gestores de outros segmentos.
+    adm: parsed.admRateadoPorSegmento?.["AUTOMOVEIS"] ?? parsed.admRateadoGrupo,
   };
 
   // Segmento de cada empresa pela BANDEIRA (null = excluída/desconhecida).
@@ -189,17 +190,16 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
   }
 
   // PC Adicional só vai pra empresas AUTOMOVEIS.
-  // Base preferencial: Intranet Auto (mais robusta e sempre presente).
-  // Fallback: Único Auto (caso a Intranet do segmento Auto venha zerada).
-  let totalPcAdicionalBase = 0;
-  let pcAdicionalSource: "unico" | "intranet" = "intranet";
-  if (totalIntranetAutoUniverso > 0) {
-    totalPcAdicionalBase = totalIntranetAutoUniverso;
-    pcAdicionalSource = "intranet";
-  } else if (totalUnicoAutoUniverso > 0) {
-    totalPcAdicionalBase = totalUnicoAutoUniverso;
-    pcAdicionalSource = "unico";
-  }
+  // A PCV determina qual % do PC Adicional vai para Automóveis (pcvShareAuto).
+  // O Único Auto determina a distribuição entre as empresas dentro de Automóveis.
+  // Não há fallback para Intranet — se Único Auto estiver zerado, nenhuma empresa recebe.
+  const totalPcAdicionalBase = totalUnicoAutoUniverso;
+
+  // Consultas ADM Avulsas: distribuição igual entre todas as empresas AUTOMOVEIS incluídas
+  // (mesma regra do PC Fixo, mas restrita ao segmento Automóveis).
+  const autoIncluidas = incluidas.filter(
+    (e) => segPorEmpresa.get(e.cod_empresa) === "AUTOMOVEIS",
+  );
 
   const rows: RateioRow[] = incluidas.map((e) => {
     const seg = segPorEmpresa.get(e.cod_empresa) ?? null;
@@ -213,29 +213,25 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
       seg && e.is_matriz && matrizes.length > 0 ? fatia.consumoMinimo / matrizes.length : 0;
     const pcFixo = seg && incluidas.length > 0 ? fatia.pcFixo / incluidas.length : 0;
 
-    // PC Adicional: só Automóveis recebe.
+    // PC Adicional: só Automóveis recebe, distribuído pelo Único Auto.
     let pcAdicional = 0;
     if (seg === "AUTOMOVEIS" && totalPcAdicionalBase > 0) {
-      const q = pcAdicionalSource === "unico" ? qUnico : qIntra;
-      pcAdicional = (fatia.pcAdicional * q) / totalPcAdicionalBase;
+      pcAdicional = (fatia.pcAdicional * qUnico) / totalPcAdicionalBase;
     }
 
-    // F&I: divide a fatia do segmento entre suas empresas pelas contagens (Novos/Semi).
+    // F&I: distribuído diretamente pelo total Intranet universo (todos os segmentos).
+    // Denominador = total de linhas Intranet de todas as empresas com bandeira mapeada.
     let fiNovos = 0;
     let fiSeminovos = 0;
-    if (seg) {
-      const fatiaFi = fiFatiaPorSeg.get(seg) ?? 0;
-      const totalSeg = (novosPorSeg.get(seg) ?? 0) + (semiPorSeg.get(seg) ?? 0);
-      if (totalSeg > 0) {
-        fiNovos = (fatiaFi * qNovos) / totalSeg;
-        fiSeminovos = (fatiaFi * qSemi) / totalSeg;
-      }
+    if (seg && intranetUniverso > 0) {
+      fiNovos = (fatia.fi * qNovos) / intranetUniverso;
+      fiSeminovos = (fatia.fi * qSemi) / intranetUniverso;
     }
 
-    // ADM: 100% Automóveis, distribuído pela Intranet do segmento Auto (universo).
+    // Consultas ADM Avulsas: 100% Automóveis, dividido igualmente entre as lojas incluídas.
     let admRateado = 0;
-    if (seg === "AUTOMOVEIS" && totalIntranetAutoUniverso > 0) {
-      admRateado = (fatia.adm * qIntra) / totalIntranetAutoUniverso;
+    if (seg === "AUTOMOVEIS" && autoIncluidas.length > 0) {
+      admRateado = fatia.adm / autoIncluidas.length;
     }
 
     const total = consumoMinimo + pcFixo + pcAdicional + fiNovos + fiSeminovos + admRateado;

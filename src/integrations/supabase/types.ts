@@ -14,6 +14,60 @@ export type Database = {
   }
   public: {
     Tables: {
+      gestores_logon: {
+        Row: {
+          id: string
+          logon: string
+          segmento: string
+          ativo: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          logon: string
+          segmento?: string
+          ativo?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          logon?: string
+          segmento?: string
+          ativo?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      pcv_usuarios: {
+        Row: {
+          id: string
+          user_id: string
+          segmento: string
+          ativo: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          segmento?: string
+          ativo?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          segmento?: string
+          ativo?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       companies: {
         Row: {
           apelido: string | null

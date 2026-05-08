@@ -2,7 +2,7 @@
  * Mapeamento bandeira → segmento de rateio.
  * Atualizar aqui quando novas bandeiras entrarem.
  */
-export type Segmento = "AUTOMOVEIS" | "CAMINHOES" | "MAQUINAS" | "TRATORES" | "MOTOS";
+export type Segmento = "AUTOMOVEIS" | "CAMINHOES" | "MAQUINAS" | "TRATORES" | "MOTOS" | "SERVICOS";
 
 const MAP: Record<string, Segmento> = {
   // Automóveis
@@ -26,10 +26,14 @@ const MAP: Record<string, Segmento> = {
   MASSEY: "TRATORES",
   // Motos
   "HONDA MOTOS": "MOTOS",
+  // Serviços
+  LOCADORA: "SERVICOS",
+  CORRETORA: "SERVICOS",
+  RGN: "SERVICOS",
 };
 
-/** Bandeiras que NUNCA entram em rateio (administrativas). */
-const EXCLUIDAS = new Set(["FAZENDA", "CORRETORA", "LOCADORA", "RGN"]);
+/** Bandeiras que NUNCA entram em rateio (somente fazenda/holding pura). */
+const EXCLUIDAS = new Set(["FAZENDA"]);
 
 function norm(s: string | null | undefined): string {
   if (!s) return "";

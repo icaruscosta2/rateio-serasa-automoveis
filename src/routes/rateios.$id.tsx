@@ -96,7 +96,7 @@ function RateioDetailPage() {
         "PC Adicional": Number(r.pc_adicional),
         "F&I Novos": Number(r.fi_novos),
         "F&I Seminovos": Number(r.fi_seminovos),
-        "ADM Rateado": Number(r.adm_rateado),
+        "Consultas ADM Avulsas": Number(r.adm_rateado),
         Total: Number(r.total),
       }));
       data.push({
@@ -106,12 +106,56 @@ function RateioDetailPage() {
         "PC Adicional": totals.pc_adicional,
         "F&I Novos": totals.fi_novos,
         "F&I Seminovos": totals.fi_seminovos,
-        "ADM Rateado": totals.adm_rateado,
+        "Consultas ADM Avulsas": totals.adm_rateado,
         Total: totals.total,
       });
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "RESUMO RATEIO");
+
+      // ---- Aba 2: Centros de Custos ----
+      // Regras AUTOMÓVEIS (aplicadas a todas as empresas):
+      //   NOVOS             = Consumo Mínimo + F&I Novos + Consultas ADM Avulsas
+      //   SEMINOVOS         = F&I Seminovos
+      //   PEÇAS             = 75% × (PC Fixo + PC Adicional)
+      //   ASSISTÊNCIA TÉC.  = 25% × (PC Fixo + PC Adicional)
+      const ccRows = rows.map((r) => {
+        const cm   = Number(r.consumo_minimo);
+        const pcf  = Number(r.pc_fixo);
+        const pca  = Number(r.pc_adicional);
+        const fiN  = Number(r.fi_novos);
+        const fiS  = Number(r.fi_seminovos);
+        const adm  = Number(r.adm_rateado);
+        const pcBase = pcf + pca;
+        const novos    = cm + fiN + adm;
+        const seminovos = fiS;
+        const pecas    = 0.75 * pcBase;
+        const at       = 0.25 * pcBase;
+        return {
+          CNPJ: r.companies?.cnpj ?? formatCnpj(r.companies?.cnpj_normalizado ?? ""),
+          Empresa: r.companies?.nome ?? "",
+          NOVOS:    novos,
+          SEMINOVOS: seminovos,
+          "PEÇAS":  pecas,
+          "ASSISTÊNCIA TÉCNICA": at,
+          TOTAL:    novos + seminovos + pecas + at,
+        };
+      });
+      const ccTotals = ccRows.reduce(
+        (acc, r) => ({
+          ...acc,
+          NOVOS:    acc.NOVOS + r.NOVOS,
+          SEMINOVOS: acc.SEMINOVOS + r.SEMINOVOS,
+          "PEÇAS":  acc["PEÇAS"] + r["PEÇAS"],
+          "ASSISTÊNCIA TÉCNICA": acc["ASSISTÊNCIA TÉCNICA"] + r["ASSISTÊNCIA TÉCNICA"],
+          TOTAL:    acc.TOTAL + r.TOTAL,
+        }),
+        { CNPJ: "", Empresa: "TOTAL", NOVOS: 0, SEMINOVOS: 0, "PEÇAS": 0, "ASSISTÊNCIA TÉCNICA": 0, TOTAL: 0 },
+      );
+      ccRows.push(ccTotals);
+      const ws2 = XLSX.utils.json_to_sheet(ccRows);
+      XLSX.utils.book_append_sheet(wb, ws2, "CENTROS DE CUSTOS");
+
       const mes = meta?.mes_referencia.slice(0, 7) ?? "rateio";
       XLSX.writeFile(wb, `RESUMO_RATEIO_${mes}.xlsx`);
     } catch (e: unknown) {
@@ -152,7 +196,7 @@ function RateioDetailPage() {
           ["PC Fixo", totals.pc_fixo],
           ["PC Adicional", totals.pc_adicional],
           ["F&I (PEFIN PF/PJ)", totals.fi_novos + totals.fi_seminovos],
-          ["ADM Rateado", totals.adm_rateado],
+          ["Consultas ADM Avulsas", totals.adm_rateado],
         ].map(([label, v]) => (
           <Card key={label as string}>
             <CardHeader className="pb-2">
@@ -182,7 +226,7 @@ function RateioDetailPage() {
               <TableRow>
                 <TableHead className="text-right border-l">Novos</TableHead>
                 <TableHead className="text-right">Seminovos</TableHead>
-                <TableHead className="text-right">ADM Rateado</TableHead>
+                <TableHead className="text-right">Consultas ADM Avulsas</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

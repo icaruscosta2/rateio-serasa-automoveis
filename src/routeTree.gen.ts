@@ -9,14 +9,21 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as UsuariosPcvRouteImport } from './routes/usuarios-pcv'
 import { Route as RateiosRouteImport } from './routes/rateios'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as GestoresLogonRouteImport } from './routes/gestores-logon'
 import { Route as EmpresasRouteImport } from './routes/empresas'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RateiosIndexRouteImport } from './routes/rateios.index'
 import { Route as RateiosNovoRouteImport } from './routes/rateios.novo'
 import { Route as RateiosIdRouteImport } from './routes/rateios.$id'
 
+const UsuariosPcvRoute = UsuariosPcvRouteImport.update({
+  id: '/usuarios-pcv',
+  path: '/usuarios-pcv',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RateiosRoute = RateiosRouteImport.update({
   id: '/rateios',
   path: '/rateios',
@@ -25,6 +32,11 @@ const RateiosRoute = RateiosRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GestoresLogonRoute = GestoresLogonRouteImport.update({
+  id: '/gestores-logon',
+  path: '/gestores-logon',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EmpresasRoute = EmpresasRouteImport.update({
@@ -56,8 +68,10 @@ const RateiosIdRoute = RateiosIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/empresas': typeof EmpresasRoute
+  '/gestores-logon': typeof GestoresLogonRoute
   '/login': typeof LoginRoute
   '/rateios': typeof RateiosRouteWithChildren
+  '/usuarios-pcv': typeof UsuariosPcvRoute
   '/rateios/$id': typeof RateiosIdRoute
   '/rateios/novo': typeof RateiosNovoRoute
   '/rateios/': typeof RateiosIndexRoute
@@ -65,7 +79,9 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/empresas': typeof EmpresasRoute
+  '/gestores-logon': typeof GestoresLogonRoute
   '/login': typeof LoginRoute
+  '/usuarios-pcv': typeof UsuariosPcvRoute
   '/rateios/$id': typeof RateiosIdRoute
   '/rateios/novo': typeof RateiosNovoRoute
   '/rateios': typeof RateiosIndexRoute
@@ -74,8 +90,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/empresas': typeof EmpresasRoute
+  '/gestores-logon': typeof GestoresLogonRoute
   '/login': typeof LoginRoute
   '/rateios': typeof RateiosRouteWithChildren
+  '/usuarios-pcv': typeof UsuariosPcvRoute
   '/rateios/$id': typeof RateiosIdRoute
   '/rateios/novo': typeof RateiosNovoRoute
   '/rateios/': typeof RateiosIndexRoute
@@ -85,8 +103,10 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/empresas'
+    | '/gestores-logon'
     | '/login'
     | '/rateios'
+    | '/usuarios-pcv'
     | '/rateios/$id'
     | '/rateios/novo'
     | '/rateios/'
@@ -94,7 +114,9 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/empresas'
+    | '/gestores-logon'
     | '/login'
+    | '/usuarios-pcv'
     | '/rateios/$id'
     | '/rateios/novo'
     | '/rateios'
@@ -102,8 +124,10 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/empresas'
+    | '/gestores-logon'
     | '/login'
     | '/rateios'
+    | '/usuarios-pcv'
     | '/rateios/$id'
     | '/rateios/novo'
     | '/rateios/'
@@ -112,12 +136,21 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   EmpresasRoute: typeof EmpresasRoute
+  GestoresLogonRoute: typeof GestoresLogonRoute
   LoginRoute: typeof LoginRoute
   RateiosRoute: typeof RateiosRouteWithChildren
+  UsuariosPcvRoute: typeof UsuariosPcvRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/usuarios-pcv': {
+      id: '/usuarios-pcv'
+      path: '/usuarios-pcv'
+      fullPath: '/usuarios-pcv'
+      preLoaderRoute: typeof UsuariosPcvRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/rateios': {
       id: '/rateios'
       path: '/rateios'
@@ -130,6 +163,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/gestores-logon': {
+      id: '/gestores-logon'
+      path: '/gestores-logon'
+      fullPath: '/gestores-logon'
+      preLoaderRoute: typeof GestoresLogonRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/empresas': {
@@ -188,9 +228,20 @@ const RateiosRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   EmpresasRoute: EmpresasRoute,
+  GestoresLogonRoute: GestoresLogonRoute,
   LoginRoute: LoginRoute,
   RateiosRoute: RateiosRouteWithChildren,
+  UsuariosPcvRoute: UsuariosPcvRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}
