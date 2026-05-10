@@ -129,14 +129,14 @@ export function AppLayout({ children }: { children?: React.ReactNode } = {}) {
           return false;
         })}
 
-        {/* ── CONFIGURAÇÕES (dropdown) ── */}
-        <div className="pt-4">
+        {/* Configurações Serasa (dropdown indentado) */}
+        <div>
           <button
             type="button"
             onClick={() => setConfigOpen((o) => !o)}
             className={cn(
-              "w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition-colors",
-              inConfig ? "text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              "w-full flex items-center justify-between pl-5 pr-3 py-2 rounded-md text-sm font-medium transition-colors",
+              inConfig ? "bg-primary text-primary-foreground" : "hover:bg-accent",
             )}
           >
             <span className="flex items-center gap-2">
@@ -152,9 +152,9 @@ export function AppLayout({ children }: { children?: React.ReactNode } = {}) {
           </button>
 
           {configOpen && (
-            <div className="mt-0.5 ml-2 border-l pl-2 space-y-0.5">
-              {navItem("/usuarios-pcv", "Usuários PCV", Users, false)}
-              {navItem("/gestores-logon", "Gestores ADM", UserCog, false)}
+            <div className="mt-0.5 ml-5 border-l pl-2 space-y-0.5">
+              {navItem("/usuarios-pcv", "Usuários PCV", Users)}
+              {navItem("/gestores-logon", "Gestores ADM", UserCog)}
             </div>
           )}
         </div>
