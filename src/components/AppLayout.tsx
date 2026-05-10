@@ -104,30 +104,30 @@ export function AppLayout({ children }: { children?: React.ReactNode } = {}) {
         {sectionLabel("Rateio de Despesas")}
         {subLabel("Serasa")}
 
-        {/* Processos: ativo apenas em /serasa/processos */}
+        {/* Etapa 1 */}
         {navItem(
-          "/serasa/processos",
-          "Processos",
+          "/serasa/divisao",
+          "1. Divisão por Segmentos",
           SlidersHorizontal,
           true,
-          (p) => p === "/serasa/processos",
+          (p) => p === "/serasa/divisao",
         )}
 
-        {/* Financeiro Auto: ativo apenas em /rateios/novo */}
-        {navItem(
-          "/rateios/novo",
-          "Financeiro Auto",
-          FileSpreadsheet,
-          true,
-          (p) => p === "/rateios/novo",
-        )}
-
-        {/* Histórico: ativo em /rateios e /rateios/:id, mas NÃO em /rateios/novo */}
-        {navItem("/rateios", "Histórico", History, true, (p) => {
+        {/* Etapa 2: ativo em /rateios e /rateios/:id, mas NÃO em /rateios/novo */}
+        {navItem("/rateios", "2. Financeiro Auto", FileSpreadsheet, true, (p) => {
           if (p === "/rateios" || p === "/rateios/") return true;
           if (p.startsWith("/rateios/") && p !== "/rateios/novo") return true;
           return false;
         })}
+
+        {/* Etapa 3 */}
+        {navItem(
+          "/serasa/envio",
+          "3. Envio ao ERP",
+          History,
+          true,
+          (p) => p === "/serasa/envio",
+        )}
 
         {/* Configurações Serasa (dropdown indentado) */}
         <div>

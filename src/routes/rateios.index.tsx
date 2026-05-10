@@ -4,7 +4,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, FileSpreadsheet, Trash2 } from "lucide-react";
+import { Plus, FileSpreadsheet, Trash2, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -28,6 +28,11 @@ interface Rateio {
   created_at: string;
 }
 
+interface ProcessoDisponivel {
+  id: string;
+  mes_referencia: string;
+}
+
 function formatMes(d: string) {
   return new Date(d + "T12:00:00").toLocaleDateString("pt-BR", {
     month: "long", year: "numeric",
@@ -39,16 +44,25 @@ function RateiosListPage() {
   const [loading, setLoading] = useState(true);
   const [toDelete, setToDelete] = useState<Rateio | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [disponiveis, setDisponiveis] = useState<ProcessoDisponivel[]>([]);
 
   useEffect(() => {
-    supabase
-      .from("rateios")
-      .select("id, mes_referencia, status, created_at")
-      .order("mes_referencia", { ascending: false })
-      .then(({ data }) => {
-        setRows((data ?? []) as Rateio[]);
-        setLoading(false);
-      });
+    Promise.all([
+      supabase
+        .from("rateios")
+        .select("id, mes_referencia, status, created_at")
+        .order("mes_referencia", { ascending: false }),
+      supabase
+        .from("processos_serasa")
+        .select("id, mes_referencia")
+        .eq("etapa1_status", "concluida")
+        .is("rateio_id", null)
+        .order("mes_referencia", { ascending: false }),
+    ]).then(([{ data: rateios }, { data: procs }]) => {
+      setRows((rateios ?? []) as Rateio[]);
+      setDisponiveis((procs ?? []) as ProcessoDisponivel[]);
+      setLoading(false);
+    });
   }, []);
 
   const handleConfirmDelete = async () => {
@@ -70,26 +84,57 @@ function RateiosListPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Rateios</h1>
-          <p className="text-muted-foreground">Histórico mensal de rateio</p>
+          <h1 className="text-3xl font-bold">2. Financeiro Auto</h1>
+          <p className="text-muted-foreground">Distribuição entre as lojas de Automóveis</p>
         </div>
-        <Link to="/rateios/novo">
-          <Button>
-            <Plus className="h-4 w-4" /> Novo rateio
-          </Button>
-        </Link>
       </div>
+
+      {/* ── Meses disponíveis para distribuição ── */}
+      {disponiveis.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Disponível para distribuição
+          </h2>
+          {disponiveis.map((p) => (
+            <Link key={p.id} to="/rateios/novo">
+              <div className="flex items-center justify-between p-4 rounded-lg border border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer">
+                <div>
+                  <p className="font-semibold">{formatMes(p.mes_referencia)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Etapa 1 concluída · aguardando distribuição
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="default">Novo rateio</Badge>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+
+      {disponiveis.length === 0 && !loading && rows.length === 0 && (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground text-sm">
+            Nenhum mês disponível para distribuição.{" "}
+            <Link to="/serasa/divisao" className="underline text-primary">
+              Conclua a Etapa 1 primeiro.
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Histórico ── */}
+      {rows.length > 0 && (
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+          Histórico
+        </h2>
+      )}
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>
-      ) : !rows.length ? (
-        <Card>
-          <CardContent className="py-16 text-center text-muted-foreground">
-            <FileSpreadsheet className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            Nenhum rateio ainda. Comece criando o primeiro.
-          </CardContent>
-        </Card>
-      ) : (
+      ) : !rows.length ? null : (
         <div className="grid grid-cols-3 gap-4">
           {rows.map((r) => (
             <div key={r.id} className="relative">

@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           id: string
           logon: string
+          nome: string | null
           segmento: string
           ativo: boolean
           created_at: string
@@ -26,6 +27,7 @@ export type Database = {
         Insert: {
           id?: string
           logon: string
+          nome?: string | null
           segmento?: string
           ativo?: boolean
           created_at?: string
@@ -34,12 +36,66 @@ export type Database = {
         Update: {
           id?: string
           logon?: string
+          nome?: string | null
           segmento?: string
           ativo?: boolean
           created_at?: string
           updated_at?: string
         }
         Relationships: []
+      }
+      processos_serasa: {
+        Row: {
+          id: string
+          mes_referencia: string
+          etapa1_status: string
+          etapa1_resultado: Json | null
+          etapa1_pcv_inicio: string | null
+          etapa1_pcv_fim: string | null
+          etapa1_pct_cons_min: number
+          etapa1_pct_pc_fixo: number
+          etapa1_concluida_em: string | null
+          rateio_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          mes_referencia: string
+          etapa1_status?: string
+          etapa1_resultado?: Json | null
+          etapa1_pcv_inicio?: string | null
+          etapa1_pcv_fim?: string | null
+          etapa1_pct_cons_min?: number
+          etapa1_pct_pc_fixo?: number
+          etapa1_concluida_em?: string | null
+          rateio_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          mes_referencia?: string
+          etapa1_status?: string
+          etapa1_resultado?: Json | null
+          etapa1_pcv_inicio?: string | null
+          etapa1_pcv_fim?: string | null
+          etapa1_pct_cons_min?: number
+          etapa1_pct_pc_fixo?: number
+          etapa1_concluida_em?: string | null
+          rateio_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "processos_serasa_rateio_id_fkey"
+            columns: ["rateio_id"]
+            isOneToOne: false
+            referencedRelation: "rateios"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       pcv_usuarios: {
         Row: {

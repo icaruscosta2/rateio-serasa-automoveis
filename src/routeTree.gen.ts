@@ -18,6 +18,8 @@ import { Route as EmpresasRouteImport } from './routes/empresas'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RateiosIndexRouteImport } from './routes/rateios.index'
 import { Route as SerasaProcessosRouteImport } from './routes/serasa.processos'
+import { Route as SerasaEnvioRouteImport } from './routes/serasa.envio'
+import { Route as SerasaDivisaoRouteImport } from './routes/serasa.divisao'
 import { Route as RateiosNovoRouteImport } from './routes/rateios.novo'
 import { Route as RateiosIdRouteImport } from './routes/rateios.$id'
 
@@ -66,6 +68,16 @@ const SerasaProcessosRoute = SerasaProcessosRouteImport.update({
   path: '/processos',
   getParentRoute: () => SerasaRoute,
 } as any)
+const SerasaEnvioRoute = SerasaEnvioRouteImport.update({
+  id: '/envio',
+  path: '/envio',
+  getParentRoute: () => SerasaRoute,
+} as any)
+const SerasaDivisaoRoute = SerasaDivisaoRouteImport.update({
+  id: '/divisao',
+  path: '/divisao',
+  getParentRoute: () => SerasaRoute,
+} as any)
 const RateiosNovoRoute = RateiosNovoRouteImport.update({
   id: '/novo',
   path: '/novo',
@@ -87,6 +99,8 @@ export interface FileRoutesByFullPath {
   '/usuarios-pcv': typeof UsuariosPcvRoute
   '/rateios/$id': typeof RateiosIdRoute
   '/rateios/novo': typeof RateiosNovoRoute
+  '/serasa/divisao': typeof SerasaDivisaoRoute
+  '/serasa/envio': typeof SerasaEnvioRoute
   '/serasa/processos': typeof SerasaProcessosRoute
   '/rateios/': typeof RateiosIndexRoute
 }
@@ -99,6 +113,8 @@ export interface FileRoutesByTo {
   '/usuarios-pcv': typeof UsuariosPcvRoute
   '/rateios/$id': typeof RateiosIdRoute
   '/rateios/novo': typeof RateiosNovoRoute
+  '/serasa/divisao': typeof SerasaDivisaoRoute
+  '/serasa/envio': typeof SerasaEnvioRoute
   '/serasa/processos': typeof SerasaProcessosRoute
   '/rateios': typeof RateiosIndexRoute
 }
@@ -113,6 +129,8 @@ export interface FileRoutesById {
   '/usuarios-pcv': typeof UsuariosPcvRoute
   '/rateios/$id': typeof RateiosIdRoute
   '/rateios/novo': typeof RateiosNovoRoute
+  '/serasa/divisao': typeof SerasaDivisaoRoute
+  '/serasa/envio': typeof SerasaEnvioRoute
   '/serasa/processos': typeof SerasaProcessosRoute
   '/rateios/': typeof RateiosIndexRoute
 }
@@ -128,6 +146,8 @@ export interface FileRouteTypes {
     | '/usuarios-pcv'
     | '/rateios/$id'
     | '/rateios/novo'
+    | '/serasa/divisao'
+    | '/serasa/envio'
     | '/serasa/processos'
     | '/rateios/'
   fileRoutesByTo: FileRoutesByTo
@@ -140,6 +160,8 @@ export interface FileRouteTypes {
     | '/usuarios-pcv'
     | '/rateios/$id'
     | '/rateios/novo'
+    | '/serasa/divisao'
+    | '/serasa/envio'
     | '/serasa/processos'
     | '/rateios'
   id:
@@ -153,6 +175,8 @@ export interface FileRouteTypes {
     | '/usuarios-pcv'
     | '/rateios/$id'
     | '/rateios/novo'
+    | '/serasa/divisao'
+    | '/serasa/envio'
     | '/serasa/processos'
     | '/rateios/'
   fileRoutesById: FileRoutesById
@@ -232,6 +256,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SerasaProcessosRouteImport
       parentRoute: typeof SerasaRoute
     }
+    '/serasa/envio': {
+      id: '/serasa/envio'
+      path: '/envio'
+      fullPath: '/serasa/envio'
+      preLoaderRoute: typeof SerasaEnvioRouteImport
+      parentRoute: typeof SerasaRoute
+    }
+    '/serasa/divisao': {
+      id: '/serasa/divisao'
+      path: '/divisao'
+      fullPath: '/serasa/divisao'
+      preLoaderRoute: typeof SerasaDivisaoRouteImport
+      parentRoute: typeof SerasaRoute
+    }
     '/rateios/novo': {
       id: '/rateios/novo'
       path: '/novo'
@@ -265,10 +303,14 @@ const RateiosRouteWithChildren =
   RateiosRoute._addFileChildren(RateiosRouteChildren)
 
 interface SerasaRouteChildren {
+  SerasaDivisaoRoute: typeof SerasaDivisaoRoute
+  SerasaEnvioRoute: typeof SerasaEnvioRoute
   SerasaProcessosRoute: typeof SerasaProcessosRoute
 }
 
 const SerasaRouteChildren: SerasaRouteChildren = {
+  SerasaDivisaoRoute: SerasaDivisaoRoute,
+  SerasaEnvioRoute: SerasaEnvioRoute,
   SerasaProcessosRoute: SerasaProcessosRoute,
 }
 
