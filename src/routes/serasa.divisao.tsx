@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import {
   TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Upload, CheckCircle2, History } from "lucide-react";
+import { Upload, CheckCircle2, History, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { parseRateioWorkbook, type ParseResult } from "@/lib/parse-rateio";
 import {
@@ -44,6 +44,7 @@ interface ProcessoRow {
   etapa1_pcv_inicio: string | null;
   etapa1_pcv_fim: string | null;
   etapa1_concluida_em: string | null;
+  etapa1_resultado: SegmentSummary | null;
   rateio_id: string | null;
 }
 
@@ -70,6 +71,7 @@ function DivisaoPage() {
   // ── Estado principal ──────────────────────────────────────────────────────
   const [processos, setProcessos] = useState<ProcessoRow[]>([]);
   const [loadingProcessos, setLoadingProcessos] = useState(true);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Formulário
   const [mes, setMes] = useState(() => {
@@ -236,42 +238,137 @@ function DivisaoPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {processos.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell className="font-medium">
-                      {formatMes(p.mes_referencia)}
-                    </TableCell>
-                    <TableCell>
-                      {p.etapa1_status === "concluida" ? (
-                        <Badge variant="default" className="gap-1">
-                          <CheckCircle2 className="h-3 w-3" /> Concluída
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary">Pendente</Badge>
+                {processos.map((p) => {
+                  const isExpanded = expandedId === p.id;
+                  const res = p.etapa1_resultado;
+                  const canExpand = p.etapa1_status === "concluida" && !!res;
+                  return (
+                    <React.Fragment key={p.id}>
+                      <TableRow
+                        className={canExpand ? "cursor-pointer hover:bg-muted/50" : ""}
+                        onClick={() => canExpand && setExpandedId(isExpanded ? null : p.id)}
+                      >
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-1.5">
+                            {canExpand ? (
+                              isExpanded
+                                ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                                : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                            ) : (
+                              <span className="w-3.5" />
+                            )}
+                            {formatMes(p.mes_referencia)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {p.etapa1_status === "concluida" ? (
+                            <Badge variant="default" className="gap-1">
+                              <CheckCircle2 className="h-3 w-3" /> Concluída
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary">Pendente</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {p.etapa1_pcv_inicio && p.etapa1_pcv_fim
+                            ? `${new Date(p.etapa1_pcv_inicio + "T12:00:00").toLocaleDateString("pt-BR")} até ${new Date(p.etapa1_pcv_fim + "T12:00:00").toLocaleDateString("pt-BR")}`
+                            : "—"}
+                        </TableCell>
+                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                          {p.rateio_id ? (
+                            <Link to="/rateios/$id" params={{ id: p.rateio_id }}>
+                              <Badge variant="outline">Ver distribuição</Badge>
+                            </Link>
+                          ) : p.etapa1_status === "concluida" ? (
+                            <Link to="/rateios">
+                              <Badge variant="outline" className="text-primary border-primary">
+                                Aguardando Financeiro
+                              </Badge>
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+
+                      {/* ── Detalhe expandido ── */}
+                      {isExpanded && res && (
+                        <TableRow className="bg-muted/30 hover:bg-muted/30">
+                          <TableCell colSpan={4} className="p-0">
+                            <div className="px-6 py-4 space-y-3">
+                              {/* Totais do grupo */}
+                              <div className="grid grid-cols-5 gap-2">
+                                {([
+                                  ["Consumo Mínimo", res.grupo.consumo_minimo],
+                                  ["PC Fixo",        res.grupo.pc_fixo],
+                                  ["PC Adicional",   res.grupo.pc_adicional],
+                                  ["F&I",            res.grupo.fi],
+                                  ["ADM Avulsas",    res.grupo.adm],
+                                ] as [string, number][]).map(([label, val]) => (
+                                  <div key={label} className="rounded border bg-background p-2.5">
+                                    <p className="text-[10px] text-muted-foreground">{label}</p>
+                                    <p className="text-sm font-semibold mt-0.5">{brl(val)}</p>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* Tabela por segmento */}
+                              <Table>
+                                <TableHeader>
+                                  <TableRow className="text-xs">
+                                    <TableHead>Segmento</TableHead>
+                                    <TableHead className="text-right">Cons. Mín.</TableHead>
+                                    <TableHead className="text-right">PC Fixo</TableHead>
+                                    <TableHead className="text-right">PC Adicional</TableHead>
+                                    <TableHead className="text-right">F&I</TableHead>
+                                    <TableHead className="text-right">ADM</TableHead>
+                                    <TableHead className="text-right font-bold">Total</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {(Object.entries(res.segmentos) as [string, import("@/lib/compute-segmentos").SegmentoValores | undefined][])
+                                    .sort(([a], [b]) => a.localeCompare(b))
+                                    .map(([seg, v]) => {
+                                      if (!v) return null;
+                                      return (
+                                        <TableRow key={seg} className="text-xs">
+                                          <TableCell className="font-medium py-1.5">
+                                            {SEG_LABELS[seg] ?? seg}
+                                          </TableCell>
+                                          <TableCell className="text-right py-1.5">{brl(v.consumo_minimo)}</TableCell>
+                                          <TableCell className="text-right py-1.5">{brl(v.pc_fixo)}</TableCell>
+                                          <TableCell className="text-right py-1.5">{brl(v.pc_adicional)}</TableCell>
+                                          <TableCell className="text-right py-1.5">{brl(v.fi_novos + v.fi_seminovos)}</TableCell>
+                                          <TableCell className="text-right py-1.5">{brl(v.adm)}</TableCell>
+                                          <TableCell className="text-right py-1.5 font-semibold">{brl(v.total)}</TableCell>
+                                        </TableRow>
+                                      );
+                                    })}
+                                </TableBody>
+                                <TableFooter>
+                                  <TableRow className="text-xs">
+                                    <TableCell className="font-bold py-1.5">TOTAL</TableCell>
+                                    <TableCell className="text-right py-1.5">{brl(res.grupo.consumo_minimo)}</TableCell>
+                                    <TableCell className="text-right py-1.5">{brl(res.grupo.pc_fixo)}</TableCell>
+                                    <TableCell className="text-right py-1.5">{brl(res.grupo.pc_adicional)}</TableCell>
+                                    <TableCell className="text-right py-1.5">{brl(res.grupo.fi)}</TableCell>
+                                    <TableCell className="text-right py-1.5">{brl(res.grupo.adm)}</TableCell>
+                                    <TableCell className="text-right py-1.5 font-bold">{brl(res.grupo.total)}</TableCell>
+                                  </TableRow>
+                                </TableFooter>
+                              </Table>
+
+                              {/* Percentuais usados */}
+                              <p className="text-[10px] text-muted-foreground">
+                                Percentuais aplicados — Consumo Mínimo: {res.pct_consumo_minimo ?? p.etapa1_pct_cons_min}% · PC Fixo: {res.pct_pc_fixo ?? p.etapa1_pct_pc_fixo}%
+                              </p>
+                            </div>
+                          </TableCell>
+                        </TableRow>
                       )}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {p.etapa1_pcv_inicio && p.etapa1_pcv_fim
-                        ? `${new Date(p.etapa1_pcv_inicio + "T12:00:00").toLocaleDateString("pt-BR")} até ${new Date(p.etapa1_pcv_fim + "T12:00:00").toLocaleDateString("pt-BR")}`
-                        : "—"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {p.rateio_id ? (
-                        <Link to="/rateios/$id" params={{ id: p.rateio_id }}>
-                          <Badge variant="outline">Ver distribuição</Badge>
-                        </Link>
-                      ) : p.etapa1_status === "concluida" ? (
-                        <Link to="/rateios">
-                          <Badge variant="outline" className="text-primary border-primary">
-                            Aguardando Financeiro
-                          </Badge>
-                        </Link>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                    </React.Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
