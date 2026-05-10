@@ -10,18 +10,25 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsuariosPcvRouteImport } from './routes/usuarios-pcv'
+import { Route as SerasaRouteImport } from './routes/serasa'
 import { Route as RateiosRouteImport } from './routes/rateios'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as GestoresLogonRouteImport } from './routes/gestores-logon'
 import { Route as EmpresasRouteImport } from './routes/empresas'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RateiosIndexRouteImport } from './routes/rateios.index'
+import { Route as SerasaProcessosRouteImport } from './routes/serasa.processos'
 import { Route as RateiosNovoRouteImport } from './routes/rateios.novo'
 import { Route as RateiosIdRouteImport } from './routes/rateios.$id'
 
 const UsuariosPcvRoute = UsuariosPcvRouteImport.update({
   id: '/usuarios-pcv',
   path: '/usuarios-pcv',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SerasaRoute = SerasaRouteImport.update({
+  id: '/serasa',
+  path: '/serasa',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RateiosRoute = RateiosRouteImport.update({
@@ -54,6 +61,11 @@ const RateiosIndexRoute = RateiosIndexRouteImport.update({
   path: '/',
   getParentRoute: () => RateiosRoute,
 } as any)
+const SerasaProcessosRoute = SerasaProcessosRouteImport.update({
+  id: '/processos',
+  path: '/processos',
+  getParentRoute: () => SerasaRoute,
+} as any)
 const RateiosNovoRoute = RateiosNovoRouteImport.update({
   id: '/novo',
   path: '/novo',
@@ -71,9 +83,11 @@ export interface FileRoutesByFullPath {
   '/gestores-logon': typeof GestoresLogonRoute
   '/login': typeof LoginRoute
   '/rateios': typeof RateiosRouteWithChildren
+  '/serasa': typeof SerasaRouteWithChildren
   '/usuarios-pcv': typeof UsuariosPcvRoute
   '/rateios/$id': typeof RateiosIdRoute
   '/rateios/novo': typeof RateiosNovoRoute
+  '/serasa/processos': typeof SerasaProcessosRoute
   '/rateios/': typeof RateiosIndexRoute
 }
 export interface FileRoutesByTo {
@@ -81,9 +95,11 @@ export interface FileRoutesByTo {
   '/empresas': typeof EmpresasRoute
   '/gestores-logon': typeof GestoresLogonRoute
   '/login': typeof LoginRoute
+  '/serasa': typeof SerasaRouteWithChildren
   '/usuarios-pcv': typeof UsuariosPcvRoute
   '/rateios/$id': typeof RateiosIdRoute
   '/rateios/novo': typeof RateiosNovoRoute
+  '/serasa/processos': typeof SerasaProcessosRoute
   '/rateios': typeof RateiosIndexRoute
 }
 export interface FileRoutesById {
@@ -93,9 +109,11 @@ export interface FileRoutesById {
   '/gestores-logon': typeof GestoresLogonRoute
   '/login': typeof LoginRoute
   '/rateios': typeof RateiosRouteWithChildren
+  '/serasa': typeof SerasaRouteWithChildren
   '/usuarios-pcv': typeof UsuariosPcvRoute
   '/rateios/$id': typeof RateiosIdRoute
   '/rateios/novo': typeof RateiosNovoRoute
+  '/serasa/processos': typeof SerasaProcessosRoute
   '/rateios/': typeof RateiosIndexRoute
 }
 export interface FileRouteTypes {
@@ -106,9 +124,11 @@ export interface FileRouteTypes {
     | '/gestores-logon'
     | '/login'
     | '/rateios'
+    | '/serasa'
     | '/usuarios-pcv'
     | '/rateios/$id'
     | '/rateios/novo'
+    | '/serasa/processos'
     | '/rateios/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -116,9 +136,11 @@ export interface FileRouteTypes {
     | '/empresas'
     | '/gestores-logon'
     | '/login'
+    | '/serasa'
     | '/usuarios-pcv'
     | '/rateios/$id'
     | '/rateios/novo'
+    | '/serasa/processos'
     | '/rateios'
   id:
     | '__root__'
@@ -127,9 +149,11 @@ export interface FileRouteTypes {
     | '/gestores-logon'
     | '/login'
     | '/rateios'
+    | '/serasa'
     | '/usuarios-pcv'
     | '/rateios/$id'
     | '/rateios/novo'
+    | '/serasa/processos'
     | '/rateios/'
   fileRoutesById: FileRoutesById
 }
@@ -139,6 +163,7 @@ export interface RootRouteChildren {
   GestoresLogonRoute: typeof GestoresLogonRoute
   LoginRoute: typeof LoginRoute
   RateiosRoute: typeof RateiosRouteWithChildren
+  SerasaRoute: typeof SerasaRouteWithChildren
   UsuariosPcvRoute: typeof UsuariosPcvRoute
 }
 
@@ -149,6 +174,13 @@ declare module '@tanstack/react-router' {
       path: '/usuarios-pcv'
       fullPath: '/usuarios-pcv'
       preLoaderRoute: typeof UsuariosPcvRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/serasa': {
+      id: '/serasa'
+      path: '/serasa'
+      fullPath: '/serasa'
+      preLoaderRoute: typeof SerasaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/rateios': {
@@ -193,6 +225,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RateiosIndexRouteImport
       parentRoute: typeof RateiosRoute
     }
+    '/serasa/processos': {
+      id: '/serasa/processos'
+      path: '/processos'
+      fullPath: '/serasa/processos'
+      preLoaderRoute: typeof SerasaProcessosRouteImport
+      parentRoute: typeof SerasaRoute
+    }
     '/rateios/novo': {
       id: '/rateios/novo'
       path: '/novo'
@@ -225,12 +264,24 @@ const RateiosRouteChildren: RateiosRouteChildren = {
 const RateiosRouteWithChildren =
   RateiosRoute._addFileChildren(RateiosRouteChildren)
 
+interface SerasaRouteChildren {
+  SerasaProcessosRoute: typeof SerasaProcessosRoute
+}
+
+const SerasaRouteChildren: SerasaRouteChildren = {
+  SerasaProcessosRoute: SerasaProcessosRoute,
+}
+
+const SerasaRouteWithChildren =
+  SerasaRoute._addFileChildren(SerasaRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   EmpresasRoute: EmpresasRoute,
   GestoresLogonRoute: GestoresLogonRoute,
   LoginRoute: LoginRoute,
   RateiosRoute: RateiosRouteWithChildren,
+  SerasaRoute: SerasaRouteWithChildren,
   UsuariosPcvRoute: UsuariosPcvRoute,
 }
 export const routeTree = rootRouteImport
