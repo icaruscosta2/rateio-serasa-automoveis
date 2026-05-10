@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -26,6 +26,9 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const Route = createFileRoute("/rateios/novo")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    processoId: typeof search.processoId === "string" ? search.processoId : undefined,
+  }),
   component: () => (
     <AppLayout>
       <NovoRateioPage />
@@ -46,11 +49,27 @@ interface CompanyRow {
 
 function NovoRateioPage() {
   const nav = useNavigate();
+  const { processoId } = useSearch({ from: "/rateios/novo" });
   const [step, setStep] = useState(1);
   const [mes, setMes] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
+
+  // Quando vem de "Disponível para distribuição", pré-preenche o mês com o da Etapa 1
+  useEffect(() => {
+    if (!processoId) return;
+    supabase
+      .from("processos_serasa")
+      .select("mes_referencia")
+      .eq("id", processoId)
+      .single()
+      .then(({ data }) => {
+        if (data?.mes_referencia) {
+          setMes(data.mes_referencia.slice(0, 7)); // "YYYY-MM"
+        }
+      });
+  }, [processoId]);
   const [file, setFile] = useState<File | null>(null);
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [parsing, setParsing] = useState(false);
@@ -356,6 +375,14 @@ function NovoRateioPage() {
         if (error) throw error;
       }
 
+      // Vincula o rateio ao processo Serasa (Etapa 1) se veio de lá
+      if (processoId) {
+        await supabase
+          .from("processos_serasa")
+          .update({ rateio_id: rateioId })
+          .eq("id", processoId);
+      }
+
       toast.success("Rateio gerado!");
       nav({ to: "/rateios/$id", params: { id: rateioId } });
     } catch (e: unknown) {
@@ -392,7 +419,18 @@ function NovoRateioPage() {
           <CardContent className="space-y-4">
             <div className="max-w-xs">
               <Label htmlFor="mes">Mês de referência</Label>
-              <Input id="mes" type="month" value={mes} onChange={(e) => setMes(e.target.value)} />
+              <Input
+                id="mes"
+                type="month"
+                value={mes}
+                onChange={(e) => setMes(e.target.value)}
+                disabled={!!processoId}
+              />
+              {processoId && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Mês definido pela Etapa 1 concluída.
+                </p>
+              )}
             </div>
             <input
               ref={fileRef}

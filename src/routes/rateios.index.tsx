@@ -96,7 +96,7 @@ function RateiosListPage() {
             Disponível para distribuição
           </h2>
           {disponiveis.map((p) => (
-            <Link key={p.id} to="/rateios/novo">
+            <Link key={p.id} to="/rateios/novo" search={{ processoId: p.id }}>
               <div className="flex items-center justify-between p-4 rounded-lg border border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer">
                 <div>
                   <p className="font-semibold">{formatMes(p.mes_referencia)}</p>
