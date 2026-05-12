@@ -181,7 +181,7 @@ function DivisaoPage() {
       if (file) {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          const path = `processos/${user.id}/${mesDate}.xlsx`;
+          const path = `${user.id}/etapa1-${mesDate}.xlsx`;
           const { error: upErr } = await supabase.storage
             .from("rateio-uploads")
             .upload(path, file, { upsert: true });
