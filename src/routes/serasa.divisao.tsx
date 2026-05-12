@@ -60,7 +60,7 @@ interface ProcessoRow {
 
 const SEG_LABELS: Record<string, string> = {
   AUTOMOVEIS:   "Automóveis",
-  CAMINHOES:    "Caminhões",
+  CAMINHOES:    "Pesados",
   PESADOS:      "Pesados",
   MOTOS:        "Motos",
   MOTOCICLETAS: "Motocicletas",

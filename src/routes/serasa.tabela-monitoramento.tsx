@@ -26,7 +26,7 @@ const SEG_LABELS: Record<string, string> = {
   PESADOS:      "Pesados",
   MOTOCICLETAS: "Motocicletas",
   SERVICOS:     "Serviços",
-  CAMINHOES:    "Caminhões",
+  CAMINHOES:    "Pesados",
   MOTOS:        "Motos",
   MAQUINAS:     "Máquinas",
   TRATORES:     "Tratores",
