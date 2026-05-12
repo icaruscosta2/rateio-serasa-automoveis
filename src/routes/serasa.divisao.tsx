@@ -98,6 +98,7 @@ function DivisaoPage() {
 
   // Dialog de confirmação de método
   const [showMethodDialog, setShowMethodDialog] = useState(false);
+  const [visibleTable, setVisibleTable] = useState<"MONITORAMENTO" | "PC_FIXO" | null>(null);
 
   // Formulário
   const [mes, setMes] = useState(() => {
@@ -661,7 +662,10 @@ function DivisaoPage() {
       )}
 
       {/* ── Dialog de confirmação do método de alocação ── */}
-      <Dialog open={showMethodDialog} onOpenChange={(o) => !o && setShowMethodDialog(false)}>
+      <Dialog
+        open={showMethodDialog}
+        onOpenChange={(o) => { if (!o) { setShowMethodDialog(false); setVisibleTable(null); } }}
+      >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
@@ -673,54 +677,135 @@ function DivisaoPage() {
           </DialogHeader>
 
           {parsed && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Componente</TableHead>
-                  <TableHead className="text-right">Valor Grupo</TableHead>
-                  <TableHead>Método de Distribuição</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {[
-                  {
-                    label:  "Consumo Mínimo",
-                    value:  parsed.consumoMinimoGrupo,
-                    method: "Proporcional ao nº de matrizes (Tabela Monitoramento)",
-                  },
-                  {
-                    label:  "PC Fixo",
-                    value:  parsed.pcFixoGrupo,
-                    method: "Proporcional ao nº de matrizes (Tabela PC Fixo)",
-                  },
-                  {
-                    label:  "PC Adicional",
-                    value:  parsed.pcAdicionalGrupo,
-                    method: "Proporcional às consultas Power Curve Variável",
-                  },
-                  {
-                    label:  "F&I (Novos + Seminovos)",
-                    value:  parsed.fiGrupo,
-                    method: "Proporcional às consultas Intranet",
-                  },
-                  {
-                    label:  "ADM Avulsas",
-                    value:  admDialogTotal,
-                    method: "Demonstrativo Serasa (por gestor/segmento)",
-                  },
-                ].map(({ label, value, method }) => (
-                  <TableRow key={label}>
-                    <TableCell className="font-medium">{label}</TableCell>
-                    <TableCell className="text-right font-mono text-sm">{brl(value)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{method}</TableCell>
+            <div className="space-y-3">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Componente</TableHead>
+                    <TableHead className="text-right">Valor Grupo</TableHead>
+                    <TableHead>Método de Distribuição</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {(
+                    [
+                      {
+                        label:    "Consumo Mínimo",
+                        value:    parsed.consumoMinimoGrupo,
+                        method:   "Proporcional ao nº de matrizes (Tabela Monitoramento)",
+                        tableKey: "MONITORAMENTO" as const,
+                      },
+                      {
+                        label:    "PC Fixo",
+                        value:    parsed.pcFixoGrupo,
+                        method:   "Proporcional ao nº de matrizes (Tabela PC Fixo)",
+                        tableKey: "PC_FIXO" as const,
+                      },
+                      {
+                        label:    "PC Adicional",
+                        value:    parsed.pcAdicionalGrupo,
+                        method:   "Proporcional às consultas Power Curve Variável",
+                        tableKey: null,
+                      },
+                      {
+                        label:    "F&I (Novos + Seminovos)",
+                        value:    parsed.fiGrupo,
+                        method:   "Proporcional às consultas Intranet",
+                        tableKey: null,
+                      },
+                      {
+                        label:    "ADM Avulsas",
+                        value:    admDialogTotal,
+                        method:   "Demonstrativo Serasa (por gestor/segmento)",
+                        tableKey: null,
+                      },
+                    ] as { label: string; value: number; method: string; tableKey: "MONITORAMENTO" | "PC_FIXO" | null }[]
+                  ).map(({ label, value, method, tableKey }) => (
+                    <TableRow key={label}>
+                      <TableCell className="font-medium">{label}</TableCell>
+                      <TableCell className="text-right font-mono text-sm">{brl(value)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        <div className="flex items-center justify-between gap-3">
+                          <span>{method}</span>
+                          {tableKey && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs shrink-0 text-primary hover:text-primary"
+                              onClick={() =>
+                                setVisibleTable((v) => (v === tableKey ? null : tableKey))
+                              }
+                            >
+                              {visibleTable === tableKey ? "ocultar" : "ver tabela"}
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              {/* Mini-tabela expansível */}
+              {visibleTable && (
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="px-3 py-2 bg-muted/50 border-b">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      {visibleTable === "MONITORAMENTO" ? "Tabela Monitoramento" : "Tabela PC Fixo"}
+                    </p>
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="text-xs">
+                        <TableHead>Segmento</TableHead>
+                        <TableHead className="text-right w-32">Nº de Matrizes</TableHead>
+                        <TableHead className="text-right w-20">%</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(() => {
+                        const map =
+                          visibleTable === "MONITORAMENTO"
+                            ? configMaps.monitoramento
+                            : configMaps.pcFixo;
+                        const total = Array.from(map.values()).reduce((a, b) => a + b, 0);
+                        return Array.from(map.entries())
+                          .sort(([a], [b]) => a.localeCompare(b))
+                          .map(([seg, qtd]) => (
+                            <TableRow key={seg} className="text-xs">
+                              <TableCell className="py-1.5">{SEG_LABELS[seg] ?? seg}</TableCell>
+                              <TableCell className="text-right py-1.5">{qtd}</TableCell>
+                              <TableCell className="text-right py-1.5 text-muted-foreground">
+                                {total > 0 ? ((qtd / total) * 100).toFixed(2) : "0,00"}%
+                              </TableCell>
+                            </TableRow>
+                          ));
+                      })()}
+                    </TableBody>
+                    <TableFooter>
+                      {(() => {
+                        const map =
+                          visibleTable === "MONITORAMENTO"
+                            ? configMaps.monitoramento
+                            : configMaps.pcFixo;
+                        const total = Array.from(map.values()).reduce((a, b) => a + b, 0);
+                        return (
+                          <TableRow className="text-xs">
+                            <TableCell className="py-1.5 font-bold">Total</TableCell>
+                            <TableCell className="text-right py-1.5 font-bold">{total}</TableCell>
+                            <TableCell className="text-right py-1.5">100,00%</TableCell>
+                          </TableRow>
+                        );
+                      })()}
+                    </TableFooter>
+                  </Table>
+                </div>
+              )}
+            </div>
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowMethodDialog(false)}>
+            <Button variant="outline" onClick={() => { setShowMethodDialog(false); setVisibleTable(null); }}>
               Cancelar
             </Button>
             <Button onClick={handleConfirmMethods}>
