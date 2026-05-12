@@ -5,8 +5,10 @@
  * (Etapa 1 do processo de rateio).
  *
  * Regras:
- *  - F&I e PC Adicional: proporção pelo volume de transações (Intranet / PCV)
- *  - Consumo Mínimo e PC Fixo: percentuais fixos configurados pelo usuário
+ *  - Consumo Mínimo: proporcional ao nº de CNPJs (Tabela Monitoramento)
+ *  - PC Fixo: proporcional ao nº de CNPJs (Tabela PC Fixo)
+ *  - PC Adicional: proporcional ao volume de consultas PCV
+ *  - F&I: proporcional ao volume de consultas Intranet
  *  - ADM: direto do Demonstrativo, já separado por segmento em parse-rateio.ts
  */
 
@@ -44,25 +46,38 @@ export interface SegmentSummary {
   };
   /** Parcela de cada segmento */
   segmentos: Partial<Record<Segmento, SegmentoValores>>;
-  /** Percentuais efetivamente aplicados para Consumo Mínimo e PC Fixo */
-  pct_consumo_minimo: number; // % → AUTOMOVEIS
-  pct_pc_fixo: number;        // % → AUTOMOVEIS
+  /**
+   * Percentual efetivo aplicado para AUTOMÓVEIS
+   * (retido para compatibilidade com registros históricos no banco)
+   */
+  pct_consumo_minimo: number;
+  pct_pc_fixo: number;
 }
 
 // ---------------------------------------------------------------------------
-// Entrada de configuração
+// Configuração de distribuição por tabela de CNPJs
 // ---------------------------------------------------------------------------
 
-export interface SegmentConfig {
-  /** % do Consumo Mínimo que vai para AUTOMÓVEIS (padrão 56%) */
-  pctConsMin: number;
-  /** % do PC Fixo que vai para AUTOMÓVEIS (padrão 66,7%) */
-  pctPcFixo: number;
+export interface SegmentConfigMaps {
+  /** segmento (nome do código Segmento) → qtd de CNPJs para Consumo Mínimo */
+  monitoramento: Map<string, number>;
+  /** segmento (nome do código Segmento) → qtd de CNPJs para PC Fixo */
+  pcFixo: Map<string, number>;
 }
 
-export const DEFAULT_SEGMENT_CONFIG: SegmentConfig = {
-  pctConsMin: 56,
-  pctPcFixo: 66.7,
+/** Valores padrão (usados como fallback se o banco não tiver configuração) */
+export const DEFAULT_SEGMENT_CONFIG_MAPS: SegmentConfigMaps = {
+  monitoramento: new Map([
+    ["AUTOMOVEIS", 14],
+    ["CAMINHOES",   4],
+    ["MOTOS",       3],
+    ["SERVICOS",    4],
+  ]),
+  pcFixo: new Map([
+    ["AUTOMOVEIS", 14],
+    ["CAMINHOES",   4],
+    ["MOTOS",       3],
+  ]),
 };
 
 // ---------------------------------------------------------------------------
@@ -81,7 +96,7 @@ type EmpresaLean = {
 export function computeSegmentos(
   parsed: ParseResult,
   todasEmpresas: EmpresaLean[],
-  config: SegmentConfig = DEFAULT_SEGMENT_CONFIG,
+  configMaps: SegmentConfigMaps = DEFAULT_SEGMENT_CONFIG_MAPS,
 ): SegmentSummary {
 
   // 1. Monta mapa CNPJ → segmento (deduplica: prioriza quem tem segmento)
@@ -115,7 +130,7 @@ export function computeSegmentos(
   const fiNovosPorSeg = new Map<Segmento, number>();
   const fiSemiPorSeg  = new Map<Segmento, number>();
   if (totalIntranet > 0) {
-    for (const [seg, qTot] of intranetTotais) {
+    for (const [seg] of intranetTotais) {
       const qN = intranetNovos.get(seg) ?? 0;
       const qS = intranetSemi.get(seg)  ?? 0;
       fiNovosPorSeg.set(seg, (parsed.fiGrupo * qN) / totalIntranet);
@@ -131,9 +146,7 @@ export function computeSegmentos(
     : 0;
   const pcAdicionalPorSeg = new Map<Segmento, number>();
   if (pcvShare > 0) {
-    // AUTOMÓVEIS: valor exato via PCV
     pcAdicionalPorSeg.set("AUTOMOVEIS", parsed.pcAdicionalGrupo * pcvShare);
-    // Restante dividido proporcionalmente pela Intranet dos outros segmentos
     const pcaResto = parsed.pcAdicionalGrupo * (1 - pcvShare);
     const intranetSemAuto = totalIntranet - (intranetTotais.get("AUTOMOVEIS") ?? 0);
     if (intranetSemAuto > 0) {
@@ -143,7 +156,6 @@ export function computeSegmentos(
       }
     }
   } else {
-    // Sem PCV → distribui tudo pelo Intranet
     if (totalIntranet > 0) {
       for (const [seg, qTot] of intranetTotais) {
         pcAdicionalPorSeg.set(seg, (parsed.pcAdicionalGrupo * qTot) / totalIntranet);
@@ -151,44 +163,70 @@ export function computeSegmentos(
     }
   }
 
-  // 5. Consumo Mínimo e PC Fixo (percentuais fixos → só AUTOMÓVEIS por enquanto)
-  const consMinAuto = parsed.consumoMinimoGrupo * (config.pctConsMin / 100);
-  const pcFixoAuto  = parsed.pcFixoGrupo        * (config.pctPcFixo  / 100);
+  // 5. Consumo Mínimo: proporcional ao nº de CNPJs (Tabela Monitoramento)
+  const totalCnpjMon = Array.from(configMaps.monitoramento.values())
+    .reduce((a, b) => a + b, 0);
+  const consMinimoPerSeg = new Map<string, number>();
+  if (totalCnpjMon > 0) {
+    for (const [seg, qtd] of configMaps.monitoramento) {
+      consMinimoPerSeg.set(seg, (parsed.consumoMinimoGrupo * qtd) / totalCnpjMon);
+    }
+  }
 
-  // 6. ADM — já separado por segmento no parse
+  // 6. PC Fixo: proporcional ao nº de CNPJs (Tabela PC Fixo)
+  const totalCnpjPcf = Array.from(configMaps.pcFixo.values())
+    .reduce((a, b) => a + b, 0);
+  const pcFixoPerSeg = new Map<string, number>();
+  if (totalCnpjPcf > 0) {
+    for (const [seg, qtd] of configMaps.pcFixo) {
+      pcFixoPerSeg.set(seg, (parsed.pcFixoGrupo * qtd) / totalCnpjPcf);
+    }
+  }
+
+  // 7. ADM — já separado por segmento no parse
   const admPorSeg = parsed.admRateadoPorSegmento ?? {};
 
-  // 7. Monta o conjunto de segmentos com dados
-  const allSegs = new Set<Segmento>([
+  // 8. Monta o conjunto de segmentos com dados
+  const allSegs = new Set<string>([
     ...intranetTotais.keys(),
-    ...Object.keys(admPorSeg) as Segmento[],
-    "AUTOMOVEIS", // garante que AUTOMÓVEIS sempre aparece
+    ...consMinimoPerSeg.keys(),
+    ...pcFixoPerSeg.keys(),
+    ...Object.keys(admPorSeg),
+    "AUTOMOVEIS",
   ]);
 
   const segmentos: Partial<Record<Segmento, SegmentoValores>> = {};
   for (const seg of allSegs) {
-    const cm  = seg === "AUTOMOVEIS" ? consMinAuto : 0; // outros segmentos: a definir
-    const pcf = seg === "AUTOMOVEIS" ? pcFixoAuto  : 0;
-    const pca = pcAdicionalPorSeg.get(seg) ?? 0;
-    const fiN = fiNovosPorSeg.get(seg)     ?? 0;
-    const fiS = fiSemiPorSeg.get(seg)      ?? 0;
+    const cm  = consMinimoPerSeg.get(seg) ?? 0;
+    const pcf = pcFixoPerSeg.get(seg)     ?? 0;
+    const pca = pcAdicionalPorSeg.get(seg as Segmento) ?? 0;
+    const fiN = fiNovosPorSeg.get(seg as Segmento)     ?? 0;
+    const fiS = fiSemiPorSeg.get(seg as Segmento)      ?? 0;
     const adm = (admPorSeg[seg] as number) ?? 0;
-    segmentos[seg] = {
-      consumo_minimo:    cm,
-      pc_fixo:           pcf,
-      pc_adicional:      pca,
-      fi_novos:          fiN,
-      fi_seminovos:      fiS,
+    segmentos[seg as Segmento] = {
+      consumo_minimo:      cm,
+      pc_fixo:             pcf,
+      pc_adicional:        pca,
+      fi_novos:            fiN,
+      fi_seminovos:        fiS,
       adm,
-      total:             cm + pcf + pca + fiN + fiS + adm,
-      intranet_novos:    intranetNovos.get(seg)  ?? 0,
-      intranet_seminovos:intranetSemi.get(seg)   ?? 0,
-      intranet_total:    intranetTotais.get(seg) ?? 0,
+      total:               cm + pcf + pca + fiN + fiS + adm,
+      intranet_novos:      intranetNovos.get(seg as Segmento)  ?? 0,
+      intranet_seminovos:  intranetSemi.get(seg as Segmento)   ?? 0,
+      intranet_total:      intranetTotais.get(seg as Segmento) ?? 0,
     };
   }
 
   const admTotal = Object.values(admPorSeg as Record<string, number>)
     .reduce((a, b) => a + b, 0);
+
+  // Percentual efetivo da AUTOMÓVEIS (para compatibilidade com histórico no banco)
+  const pctConsMin = totalCnpjMon > 0
+    ? ((configMaps.monitoramento.get("AUTOMOVEIS") ?? 0) / totalCnpjMon) * 100
+    : 0;
+  const pctPcFixo = totalCnpjPcf > 0
+    ? ((configMaps.pcFixo.get("AUTOMOVEIS") ?? 0) / totalCnpjPcf) * 100
+    : 0;
 
   return {
     grupo: {
@@ -202,7 +240,7 @@ export function computeSegmentos(
       intranet_total: totalIntranet,
     },
     segmentos,
-    pct_consumo_minimo: config.pctConsMin,
-    pct_pc_fixo:        config.pctPcFixo,
+    pct_consumo_minimo: pctConsMin,
+    pct_pc_fixo:        pctPcFixo,
   };
 }

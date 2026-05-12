@@ -14,6 +14,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      rateio_config_segmentos: {
+        Row: {
+          tipo: string
+          segmento: string
+          qtd_cnpj: number
+        }
+        Insert: {
+          tipo: string
+          segmento: string
+          qtd_cnpj?: number
+        }
+        Update: {
+          tipo?: string
+          segmento?: string
+          qtd_cnpj?: number
+        }
+        Relationships: []
+      }
       gestores_logon: {
         Row: {
           id: string

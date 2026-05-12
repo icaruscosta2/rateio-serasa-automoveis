@@ -17,6 +17,8 @@ import { Route as GestoresLogonRouteImport } from './routes/gestores-logon'
 import { Route as EmpresasRouteImport } from './routes/empresas'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RateiosIndexRouteImport } from './routes/rateios.index'
+import { Route as SerasaTabelaPcFixoRouteImport } from './routes/serasa.tabela-pc-fixo'
+import { Route as SerasaTabelaMonitoramentoRouteImport } from './routes/serasa.tabela-monitoramento'
 import { Route as SerasaProcessosRouteImport } from './routes/serasa.processos'
 import { Route as SerasaEnvioRouteImport } from './routes/serasa.envio'
 import { Route as SerasaDivisaoRouteImport } from './routes/serasa.divisao'
@@ -63,6 +65,17 @@ const RateiosIndexRoute = RateiosIndexRouteImport.update({
   path: '/',
   getParentRoute: () => RateiosRoute,
 } as any)
+const SerasaTabelaPcFixoRoute = SerasaTabelaPcFixoRouteImport.update({
+  id: '/tabela-pc-fixo',
+  path: '/tabela-pc-fixo',
+  getParentRoute: () => SerasaRoute,
+} as any)
+const SerasaTabelaMonitoramentoRoute =
+  SerasaTabelaMonitoramentoRouteImport.update({
+    id: '/tabela-monitoramento',
+    path: '/tabela-monitoramento',
+    getParentRoute: () => SerasaRoute,
+  } as any)
 const SerasaProcessosRoute = SerasaProcessosRouteImport.update({
   id: '/processos',
   path: '/processos',
@@ -102,6 +115,8 @@ export interface FileRoutesByFullPath {
   '/serasa/divisao': typeof SerasaDivisaoRoute
   '/serasa/envio': typeof SerasaEnvioRoute
   '/serasa/processos': typeof SerasaProcessosRoute
+  '/serasa/tabela-monitoramento': typeof SerasaTabelaMonitoramentoRoute
+  '/serasa/tabela-pc-fixo': typeof SerasaTabelaPcFixoRoute
   '/rateios/': typeof RateiosIndexRoute
 }
 export interface FileRoutesByTo {
@@ -116,6 +131,8 @@ export interface FileRoutesByTo {
   '/serasa/divisao': typeof SerasaDivisaoRoute
   '/serasa/envio': typeof SerasaEnvioRoute
   '/serasa/processos': typeof SerasaProcessosRoute
+  '/serasa/tabela-monitoramento': typeof SerasaTabelaMonitoramentoRoute
+  '/serasa/tabela-pc-fixo': typeof SerasaTabelaPcFixoRoute
   '/rateios': typeof RateiosIndexRoute
 }
 export interface FileRoutesById {
@@ -132,6 +149,8 @@ export interface FileRoutesById {
   '/serasa/divisao': typeof SerasaDivisaoRoute
   '/serasa/envio': typeof SerasaEnvioRoute
   '/serasa/processos': typeof SerasaProcessosRoute
+  '/serasa/tabela-monitoramento': typeof SerasaTabelaMonitoramentoRoute
+  '/serasa/tabela-pc-fixo': typeof SerasaTabelaPcFixoRoute
   '/rateios/': typeof RateiosIndexRoute
 }
 export interface FileRouteTypes {
@@ -149,6 +168,8 @@ export interface FileRouteTypes {
     | '/serasa/divisao'
     | '/serasa/envio'
     | '/serasa/processos'
+    | '/serasa/tabela-monitoramento'
+    | '/serasa/tabela-pc-fixo'
     | '/rateios/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -163,6 +184,8 @@ export interface FileRouteTypes {
     | '/serasa/divisao'
     | '/serasa/envio'
     | '/serasa/processos'
+    | '/serasa/tabela-monitoramento'
+    | '/serasa/tabela-pc-fixo'
     | '/rateios'
   id:
     | '__root__'
@@ -178,6 +201,8 @@ export interface FileRouteTypes {
     | '/serasa/divisao'
     | '/serasa/envio'
     | '/serasa/processos'
+    | '/serasa/tabela-monitoramento'
+    | '/serasa/tabela-pc-fixo'
     | '/rateios/'
   fileRoutesById: FileRoutesById
 }
@@ -249,6 +274,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RateiosIndexRouteImport
       parentRoute: typeof RateiosRoute
     }
+    '/serasa/tabela-pc-fixo': {
+      id: '/serasa/tabela-pc-fixo'
+      path: '/tabela-pc-fixo'
+      fullPath: '/serasa/tabela-pc-fixo'
+      preLoaderRoute: typeof SerasaTabelaPcFixoRouteImport
+      parentRoute: typeof SerasaRoute
+    }
+    '/serasa/tabela-monitoramento': {
+      id: '/serasa/tabela-monitoramento'
+      path: '/tabela-monitoramento'
+      fullPath: '/serasa/tabela-monitoramento'
+      preLoaderRoute: typeof SerasaTabelaMonitoramentoRouteImport
+      parentRoute: typeof SerasaRoute
+    }
     '/serasa/processos': {
       id: '/serasa/processos'
       path: '/processos'
@@ -306,12 +345,16 @@ interface SerasaRouteChildren {
   SerasaDivisaoRoute: typeof SerasaDivisaoRoute
   SerasaEnvioRoute: typeof SerasaEnvioRoute
   SerasaProcessosRoute: typeof SerasaProcessosRoute
+  SerasaTabelaMonitoramentoRoute: typeof SerasaTabelaMonitoramentoRoute
+  SerasaTabelaPcFixoRoute: typeof SerasaTabelaPcFixoRoute
 }
 
 const SerasaRouteChildren: SerasaRouteChildren = {
   SerasaDivisaoRoute: SerasaDivisaoRoute,
   SerasaEnvioRoute: SerasaEnvioRoute,
   SerasaProcessosRoute: SerasaProcessosRoute,
+  SerasaTabelaMonitoramentoRoute: SerasaTabelaMonitoramentoRoute,
+  SerasaTabelaPcFixoRoute: SerasaTabelaPcFixoRoute,
 }
 
 const SerasaRouteWithChildren =

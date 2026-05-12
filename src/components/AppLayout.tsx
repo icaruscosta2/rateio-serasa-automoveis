@@ -13,6 +13,7 @@ import {
   History,
   ChevronRight,
   Settings2,
+  Table2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +23,10 @@ export function AppLayout({ children }: { children?: React.ReactNode } = {}) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   const inConfig =
-    pathname === "/usuarios-pcv" || pathname === "/gestores-logon";
+    pathname === "/usuarios-pcv" ||
+    pathname === "/gestores-logon" ||
+    pathname === "/serasa/tabela-monitoramento" ||
+    pathname === "/serasa/tabela-pc-fixo";
   const [configOpen, setConfigOpen] = useState(inConfig);
 
   // Abre o dropdown automaticamente se o usuário navegar para uma página de config
@@ -155,6 +159,8 @@ export function AppLayout({ children }: { children?: React.ReactNode } = {}) {
             <div className="mt-0.5 ml-5 border-l pl-2 space-y-0.5">
               {navItem("/usuarios-pcv", "Usuários PCV", Users)}
               {navItem("/gestores-logon", "Gestores ADM", UserCog)}
+              {navItem("/serasa/tabela-monitoramento", "Tabela Monitoramento", Table2)}
+              {navItem("/serasa/tabela-pc-fixo", "Tabela PC Fixo", Table2)}
             </div>
           )}
         </div>

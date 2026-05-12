@@ -12,6 +12,10 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead,
   TableHeader, TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter,
+  DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Upload, CheckCircle2, History, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -22,7 +26,8 @@ import {
 import { parseRateioWorkbook, type ParseResult } from "@/lib/parse-rateio";
 import {
   computeSegmentos,
-  DEFAULT_SEGMENT_CONFIG,
+  DEFAULT_SEGMENT_CONFIG_MAPS,
+  type SegmentConfigMaps,
   type SegmentSummary,
 } from "@/lib/compute-segmentos";
 import { brl } from "@/lib/format";
@@ -54,12 +59,20 @@ interface ProcessoRow {
 }
 
 const SEG_LABELS: Record<string, string> = {
-  AUTOMOVEIS:  "Automóveis",
-  CAMINHOES:   "Caminhões",
-  MOTOS:       "Motos",
-  MAQUINAS:    "Máquinas",
-  TRATORES:    "Tratores",
-  SERVICOS:    "Serviços",
+  AUTOMOVEIS:   "Automóveis",
+  CAMINHOES:    "Caminhões",
+  PESADOS:      "Pesados",
+  MOTOS:        "Motos",
+  MOTOCICLETAS: "Motocicletas",
+  MAQUINAS:     "Máquinas",
+  TRATORES:     "Tratores",
+  SERVICOS:     "Serviços",
+};
+
+/** Mapeamento de nomes do banco para nomes internos do tipo Segmento */
+const DB_SEG_TO_CODE: Record<string, string> = {
+  PESADOS:      "CAMINHOES",
+  MOTOCICLETAS: "MOTOS",
 };
 
 function formatMes(d: string) {
@@ -80,6 +93,12 @@ function DivisaoPage() {
   const [toDelete, setToDelete]     = useState<ProcessoRow | null>(null);
   const [deleting, setDeleting]     = useState(false);
 
+  // Config maps (carregadas do banco)
+  const [configMaps, setConfigMaps] = useState<SegmentConfigMaps>(DEFAULT_SEGMENT_CONFIG_MAPS);
+
+  // Dialog de confirmação de método
+  const [showMethodDialog, setShowMethodDialog] = useState(false);
+
   // Formulário
   const [mes, setMes] = useState(() => {
     const d = new Date();
@@ -88,8 +107,6 @@ function DivisaoPage() {
   const [pcvInicio, setPcvInicio] = useState("");
   const [pcvFim, setPcvFim] = useState("");
   const [file, setFile]   = useState<File | null>(null);
-  const [pctConsMin, setPctConsMin] = useState(56);
-  const [pctPcFixo,  setPctPcFixo]  = useState(66.7);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Resultado do parse
@@ -112,12 +129,15 @@ function DivisaoPage() {
       supabase.from("companies").select("cnpj_normalizado, bandeira"),
       supabase.from("pcv_usuarios").select("user_id, segmento").eq("ativo", true),
       supabase.from("gestores_logon").select("logon, segmento").eq("ativo", true),
-    ]).then(([{ data: ps }, { data: cos }, { data: pcvs }, { data: gests }]) => {
+      supabase.from("rateio_config_segmentos").select("tipo, segmento, qtd_cnpj"),
+    ]).then(([{ data: ps }, { data: cos }, { data: pcvs }, { data: gests }, { data: configs }]) => {
       setProcessos((ps ?? []) as ProcessoRow[]);
       setAllCompanies(cos ?? []);
+
       const pm = new Map<string, string>();
       for (const u of pcvs ?? []) pm.set(u.user_id.toUpperCase().trim(), u.segmento);
       setPcvMap(pm);
+
       const gm = new Map<string, string>();
       for (const g of gests ?? [])
         gm.set(
@@ -125,20 +145,23 @@ function DivisaoPage() {
           g.segmento,
         );
       setGestoresMap(gm);
+
+      // Constrói os mapas de configuração a partir do banco
+      const monMap = new Map<string, number>();
+      const pcfMap = new Map<string, number>();
+      for (const row of configs ?? []) {
+        const codeSeg = DB_SEG_TO_CODE[row.segmento] ?? row.segmento;
+        if (row.tipo === "MONITORAMENTO") monMap.set(codeSeg, row.qtd_cnpj);
+        else if (row.tipo === "PC_FIXO")  pcfMap.set(codeSeg, row.qtd_cnpj);
+      }
+      // Usa defaults se banco vazio
+      if (monMap.size === 0) DEFAULT_SEGMENT_CONFIG_MAPS.monitoramento.forEach((v, k) => monMap.set(k, v));
+      if (pcfMap.size === 0) DEFAULT_SEGMENT_CONFIG_MAPS.pcFixo.forEach((v, k) => pcfMap.set(k, v));
+      setConfigMaps({ monitoramento: monMap, pcFixo: pcfMap });
+
       setLoadingProcessos(false);
     });
   }, []);
-
-  // Recalcula resumo ao mudar os percentuais (sem re-parsear o arquivo)
-  useEffect(() => {
-    if (!parsed) return;
-    setSummary(
-      computeSegmentos(parsed, allCompanies, {
-        pctConsMin,
-        pctPcFixo,
-      }),
-    );
-  }, [parsed, allCompanies, pctConsMin, pctPcFixo]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -153,19 +176,24 @@ function DivisaoPage() {
     setParsing(true);
     try {
       const buf = await file.arrayBuffer();
-      // parseRateioWorkbook: (buffer, pcvUsuariosPf, empresas, gestoresLogon)
       const result = parseRateioWorkbook(buf, pcvMap, undefined, gestoresMap);
       setParsed(result);
-      setSummary(computeSegmentos(result, allCompanies, { pctConsMin, pctPcFixo }));
       if (result.warnings.length) {
         result.warnings.forEach((w) => toast.warning(w));
       }
       toast.success("Arquivo processado!");
+      setShowMethodDialog(true);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao processar arquivo");
     } finally {
       setParsing(false);
     }
+  };
+
+  const handleConfirmMethods = () => {
+    if (!parsed) return;
+    setSummary(computeSegmentos(parsed, allCompanies, configMaps));
+    setShowMethodDialog(false);
   };
 
   const handleConfirm = async () => {
@@ -174,7 +202,17 @@ function DivisaoPage() {
 
     setSaving(true);
     try {
-      const mesDate = mes + "-01"; // date no banco
+      const mesDate = mes + "-01";
+
+      // Percentuais de AUTOMÓVEIS (para colunas legadas no banco)
+      const totalMon = Array.from(configMaps.monitoramento.values()).reduce((a, b) => a + b, 0);
+      const pctConsMin = totalMon > 0
+        ? ((configMaps.monitoramento.get("AUTOMOVEIS") ?? 0) / totalMon) * 100
+        : 56;
+      const totalPcf = Array.from(configMaps.pcFixo.values()).reduce((a, b) => a + b, 0);
+      const pctPcFixo = totalPcf > 0
+        ? ((configMaps.pcFixo.get("AUTOMOVEIS") ?? 0) / totalPcf) * 100
+        : 66.7;
 
       // Salva o arquivo no Storage para que a Etapa 2 não precise re-upload
       let storagePath: string | null = null;
@@ -234,7 +272,6 @@ function DivisaoPage() {
     if (!toDelete) return;
     setDeleting(true);
     try {
-      // Remove arquivo do Storage (se existir)
       if (toDelete.arquivo_storage_path) {
         await supabase.storage
           .from("rateio-uploads")
@@ -260,6 +297,12 @@ function DivisaoPage() {
     (p) => p.mes_referencia.slice(0, 7) === mes,
   );
   const jaConcluido = processoDoMes?.etapa1_status === "concluida";
+
+  // Totais ADM para o dialog
+  const admDialogTotal = parsed
+    ? Object.values(parsed.admRateadoPorSegmento ?? {})
+        .reduce((a, b) => a + (b as number), 0)
+    : 0;
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -424,7 +467,7 @@ function DivisaoPage() {
 
                               {/* Percentuais usados */}
                               <p className="text-[10px] text-muted-foreground">
-                                Percentuais aplicados — Consumo Mínimo: {res.pct_consumo_minimo ?? p.etapa1_pct_cons_min}% · PC Fixo: {res.pct_pc_fixo ?? p.etapa1_pct_pc_fixo}%
+                                % Automóveis aplicados — Consumo Mínimo: {(res.pct_consumo_minimo ?? p.etapa1_pct_cons_min).toFixed(2)}% · PC Fixo: {(res.pct_pc_fixo ?? p.etapa1_pct_pc_fixo).toFixed(2)}%
                               </p>
                             </div>
                           </TableCell>
@@ -484,44 +527,6 @@ function DivisaoPage() {
                 value={pcvFim}
                 onChange={(e) => setPcvFim(e.target.value)}
               />
-            </div>
-          </div>
-
-          {/* Percentuais fixos */}
-          <div className="grid grid-cols-2 gap-4 p-4 rounded-lg bg-muted/50">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">
-                % Consumo Mínimo → Automóveis
-              </Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  value={pctConsMin}
-                  onChange={(e) => setPctConsMin(Number(e.target.value))}
-                  className="w-24"
-                />
-                <span className="text-sm text-muted-foreground">%</span>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">
-                % PC Fixo → Automóveis
-              </Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  value={pctPcFixo}
-                  onChange={(e) => setPctPcFixo(Number(e.target.value))}
-                  className="w-24"
-                />
-                <span className="text-sm text-muted-foreground">%</span>
-              </div>
             </div>
           </div>
 
@@ -586,9 +591,8 @@ function DivisaoPage() {
             <CardHeader>
               <CardTitle>Divisão por Segmento</CardTitle>
               <CardDescription>
-                Consumo Mínimo e PC Fixo calculados pelo percentual configurado.
-                PC Adicional pela proporção PCV. F&I e ADM pela proporção Intranet/Demonstrativo.
-                Outros segmentos (Caminhões, Motos, etc.) terão regras específicas em breve.
+                Consumo Mínimo e PC Fixo distribuídos pelo nº de CNPJs de cada segmento.
+                PC Adicional pela proporção PCV. F&I pela proporção Intranet. ADM direto do Demonstrativo.
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -655,6 +659,77 @@ function DivisaoPage() {
           </div>
         </>
       )}
+
+      {/* ── Dialog de confirmação do método de alocação ── */}
+      <Dialog open={showMethodDialog} onOpenChange={(o) => !o && setShowMethodDialog(false)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              Confirmar método de alocação — {formatMes(mes)}
+            </DialogTitle>
+            <DialogDescription>
+              Revise como cada componente da fatura será distribuído entre os segmentos antes de calcular.
+            </DialogDescription>
+          </DialogHeader>
+
+          {parsed && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Componente</TableHead>
+                  <TableHead className="text-right">Valor Grupo</TableHead>
+                  <TableHead>Método de Distribuição</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[
+                  {
+                    label:  "Consumo Mínimo",
+                    value:  parsed.consumoMinimoGrupo,
+                    method: "Proporcional ao nº de CNPJs (Tabela Monitoramento)",
+                  },
+                  {
+                    label:  "PC Fixo",
+                    value:  parsed.pcFixoGrupo,
+                    method: "Proporcional ao nº de CNPJs (Tabela PC Fixo)",
+                  },
+                  {
+                    label:  "PC Adicional",
+                    value:  parsed.pcAdicionalGrupo,
+                    method: "Proporcional às consultas Power Curve Variável",
+                  },
+                  {
+                    label:  "F&I (Novos + Seminovos)",
+                    value:  parsed.fiGrupo,
+                    method: "Proporcional às consultas Intranet",
+                  },
+                  {
+                    label:  "ADM Avulsas",
+                    value:  admDialogTotal,
+                    method: "Direto do Demonstrativo (por gestor/segmento)",
+                  },
+                ].map(({ label, value, method }) => (
+                  <TableRow key={label}>
+                    <TableCell className="font-medium">{label}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">{brl(value)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{method}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowMethodDialog(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleConfirmMethods}>
+              <CheckCircle2 className="h-4 w-4" />
+              Confirmar e calcular
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Confirmar exclusão de processo ── */}
       <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && !deleting && setToDelete(null)}>
