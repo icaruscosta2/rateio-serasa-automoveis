@@ -686,12 +686,12 @@ function DivisaoPage() {
                   {
                     label:  "Consumo Mínimo",
                     value:  parsed.consumoMinimoGrupo,
-                    method: "Proporcional ao nº de CNPJs (Tabela Monitoramento)",
+                    method: "Proporcional ao nº de matrizes (Tabela Monitoramento)",
                   },
                   {
                     label:  "PC Fixo",
                     value:  parsed.pcFixoGrupo,
-                    method: "Proporcional ao nº de CNPJs (Tabela PC Fixo)",
+                    method: "Proporcional ao nº de matrizes (Tabela PC Fixo)",
                   },
                   {
                     label:  "PC Adicional",
@@ -706,7 +706,7 @@ function DivisaoPage() {
                   {
                     label:  "ADM Avulsas",
                     value:  admDialogTotal,
-                    method: "Direto do Demonstrativo (por gestor/segmento)",
+                    method: "Demonstrativo Serasa (por gestor/segmento)",
                   },
                 ].map(({ label, value, method }) => (
                   <TableRow key={label}>

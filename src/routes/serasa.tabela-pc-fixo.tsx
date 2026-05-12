@@ -91,7 +91,7 @@ function TabelaPcFixoPage() {
       <div>
         <h1 className="text-3xl font-bold">Tabela PC Fixo</h1>
         <p className="text-muted-foreground">
-          Nº de CNPJs por segmento para alocação do <strong>PC Fixo</strong> Serasa
+          Nº de matrizes por segmento para alocação do <strong>PC Fixo</strong> Serasa
         </p>
       </div>
 
@@ -99,7 +99,7 @@ function TabelaPcFixoPage() {
         <CardHeader>
           <CardTitle>Distribuição por Segmento</CardTitle>
           <CardDescription>
-            O percentual de cada segmento é calculado automaticamente com base no total de CNPJs.
+            O percentual de cada segmento é calculado automaticamente com base no total de matrizes.
             Serviços não participa do PC Fixo.
           </CardDescription>
         </CardHeader>
@@ -108,7 +108,7 @@ function TabelaPcFixoPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Segmento</TableHead>
-                <TableHead className="text-right w-32">Nº de CNPJs</TableHead>
+                <TableHead className="text-right w-32">Nº de Matrizes</TableHead>
                 <TableHead className="text-right w-24">%</TableHead>
               </TableRow>
             </TableHeader>

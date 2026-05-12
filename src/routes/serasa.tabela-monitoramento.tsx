@@ -91,7 +91,7 @@ function TabelaMonitoramentoPage() {
       <div>
         <h1 className="text-3xl font-bold">Tabela Monitoramento</h1>
         <p className="text-muted-foreground">
-          Nº de CNPJs por segmento para alocação do <strong>Consumo Mínimo</strong> Serasa
+          Nº de matrizes por segmento para alocação do <strong>Consumo Mínimo</strong> Serasa
         </p>
       </div>
 
@@ -99,7 +99,7 @@ function TabelaMonitoramentoPage() {
         <CardHeader>
           <CardTitle>Distribuição por Segmento</CardTitle>
           <CardDescription>
-            O percentual de cada segmento é calculado automaticamente com base no total de CNPJs.
+            O percentual de cada segmento é calculado automaticamente com base no total de matrizes.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -107,7 +107,7 @@ function TabelaMonitoramentoPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Segmento</TableHead>
-                <TableHead className="text-right w-32">Nº de CNPJs</TableHead>
+                <TableHead className="text-right w-32">Nº de Matrizes</TableHead>
                 <TableHead className="text-right w-24">%</TableHead>
               </TableRow>
             </TableHeader>
