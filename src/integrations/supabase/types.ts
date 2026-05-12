@@ -55,6 +55,7 @@ export type Database = {
           etapa1_pct_cons_min: number
           etapa1_pct_pc_fixo: number
           etapa1_concluida_em: string | null
+          arquivo_storage_path: string | null
           rateio_id: string | null
           created_at: string
           updated_at: string
@@ -69,6 +70,7 @@ export type Database = {
           etapa1_pct_cons_min?: number
           etapa1_pct_pc_fixo?: number
           etapa1_concluida_em?: string | null
+          arquivo_storage_path?: string | null
           rateio_id?: string | null
           created_at?: string
           updated_at?: string
@@ -83,6 +85,7 @@ export type Database = {
           etapa1_pct_cons_min?: number
           etapa1_pct_pc_fixo?: number
           etapa1_concluida_em?: string | null
+          arquivo_storage_path?: string | null
           rateio_id?: string | null
           created_at?: string
           updated_at?: string

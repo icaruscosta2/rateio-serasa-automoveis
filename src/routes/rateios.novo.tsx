@@ -13,7 +13,7 @@ import {
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Upload, ChevronRight, ChevronLeft, Check } from "lucide-react";
+import { Upload, ChevronRight, ChevronLeft, Check, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { parseRateioWorkbook, type ParseResult } from "@/lib/parse-rateio";
 import { brl, intBR } from "@/lib/format";
@@ -56,20 +56,6 @@ function NovoRateioPage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
 
-  // Quando vem de "Disponível para distribuição", pré-preenche o mês com o da Etapa 1
-  useEffect(() => {
-    if (!processoId) return;
-    supabase
-      .from("processos_serasa")
-      .select("mes_referencia")
-      .eq("id", processoId)
-      .single()
-      .then(({ data }) => {
-        if (data?.mes_referencia) {
-          setMes(data.mes_referencia.slice(0, 7)); // "YYYY-MM"
-        }
-      });
-  }, [processoId]);
   const [file, setFile] = useState<File | null>(null);
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [parsing, setParsing] = useState(false);
@@ -82,6 +68,13 @@ function NovoRateioPage() {
     consumoMinimo: 0.56, pcFixo: 2 / 3, pcAdicional: 0.56, fi: 0.56, adm: 0.56,
   });
   const [saving, setSaving] = useState(false);
+
+  // Auto-carga da planilha salva na Etapa 1
+  const [loadingFromStorage, setLoadingFromStorage] = useState(false);
+  const [storageBlob, setStorageBlob]   = useState<Blob | null>(null);
+  const [needsUnicoAuto, setNeedsUnicoAuto] = useState(false);
+  const uniAutoRef = useRef<HTMLInputElement>(null);
+  const autoParseTriggered = useRef(false);
 
   // Popup de usuários desconhecidos de "Consulta PF"
   const [pcvDialog, setPcvDialog] = useState<{
@@ -152,6 +145,45 @@ function NovoRateioPage() {
         setSel(init);
       });
   }, []);
+
+  // Quando vem de "Disponível para distribuição": pré-preenche o mês e baixa o arquivo do Storage
+  useEffect(() => {
+    if (!processoId) return;
+    setLoadingFromStorage(true);
+    supabase
+      .from("processos_serasa")
+      .select("mes_referencia, arquivo_storage_path")
+      .eq("id", processoId)
+      .single()
+      .then(async ({ data }) => {
+        if (data?.mes_referencia) setMes(data.mes_referencia.slice(0, 7));
+        if (!data?.arquivo_storage_path) { setLoadingFromStorage(false); return; }
+        const { data: blob, error } = await supabase.storage
+          .from("rateio-uploads")
+          .download(data.arquivo_storage_path);
+        if (!error && blob) setStorageBlob(blob);
+        setLoadingFromStorage(false);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [processoId]);
+
+  // Dispara o parse assim que o blob do Storage E as empresas estiverem prontos
+  const companiesReady = companies.length > 0;
+  useEffect(() => {
+    if (!storageBlob || !companiesReady || autoParseTriggered.current) return;
+    autoParseTriggered.current = true;
+    const f = new File([storageBlob], "planilha-etapa1.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    doParse(f);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageBlob, companiesReady]);
+
+  // Depois do parse automático, verifica se ÚNICO AUTO está presente
+  useEffect(() => {
+    if (!parsed || !processoId) return;
+    setNeedsUnicoAuto(parsed.unicoAutoPorCnpj.size === 0);
+  }, [parsed, processoId]);
 
   const doParse = async (
     f: File,
@@ -263,6 +295,31 @@ function NovoRateioPage() {
     } finally {
       setAdmSaving(false);
     }
+  };
+
+  const handleUnicoAutoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f || !parsed) return;
+    try {
+      const buf = await f.arrayBuffer();
+      const [{ data: pcvData }, { data: gestoresData }] = await Promise.all([
+        supabase.from("pcv_usuarios").select("user_id, segmento").eq("ativo", true),
+        supabase.from("gestores_logon").select("logon, segmento").eq("ativo", true),
+      ]);
+      const pcvMap = new Map((pcvData ?? []).map((u) => [u.user_id.toLowerCase(), u.segmento]));
+      const gestMap = new Map((gestoresData ?? []).map((g) => [g.logon.toUpperCase().trim(), g.segmento]));
+      const sup = parseRateioWorkbook(buf, pcvMap, companies, gestMap);
+      if (sup.unicoAutoPorCnpj.size === 0) {
+        toast.error("Aba ÚNICO AUTO não encontrada neste arquivo");
+        return;
+      }
+      setParsed({ ...parsed, unicoAutoPorCnpj: sup.unicoAutoPorCnpj });
+      setNeedsUnicoAuto(false);
+      toast.success(`ÚNICO AUTO carregado — ${sup.unicoAutoPorCnpj.size} CNPJs`);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao ler arquivo");
+    }
+    e.target.value = "";
   };
 
   const selectedCount = Object.values(sel).filter((s) => s.incluida).length;
@@ -411,9 +468,11 @@ function NovoRateioPage() {
       {step === 1 && (
         <Card>
           <CardHeader>
-            <CardTitle>1. Mês e Upload</CardTitle>
+            <CardTitle>1. Mês e Planilha</CardTitle>
             <CardDescription>
-              Envie a planilha mensal contendo as abas <strong>Demonstrativo</strong>, <strong>Intranet</strong> e <strong>Power Curve Variável</strong>.
+              {processoId
+                ? "Planilha carregada automaticamente da Etapa 1."
+                : "Envie a planilha mensal contendo as abas Demonstrativo, Intranet e Power Curve Variável."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -432,21 +491,68 @@ function NovoRateioPage() {
                 </p>
               )}
             </div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) doParse(f);
-                e.target.value = "";
-              }}
-            />
-            <Button onClick={() => fileRef.current?.click()} disabled={parsing}>
-              <Upload className="h-4 w-4" /> {parsing ? "Lendo…" : file ? "Trocar arquivo" : "Enviar planilha"}
-            </Button>
-            {file && <p className="text-sm text-muted-foreground">{file.name}</p>}
+
+            {/* ── Fluxo auto-carga (veio de processoId) ── */}
+            {processoId ? (
+              loadingFromStorage || parsing ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Carregando planilha da Etapa 1…
+                </div>
+              ) : !storageBlob ? (
+                // arquivo_storage_path não existe (processo anterior ao recurso)
+                <div className="space-y-3">
+                  <p className="text-sm text-amber-600">
+                    ⚠ Arquivo não encontrado no servidor — envie a planilha manualmente.
+                  </p>
+                  <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) doParse(f); e.target.value = ""; }} />
+                  <Button onClick={() => fileRef.current?.click()} disabled={parsing}>
+                    <Upload className="h-4 w-4" /> {parsing ? "Lendo…" : file ? "Trocar arquivo" : "Enviar planilha"}
+                  </Button>
+                  {file && <p className="text-sm text-muted-foreground">{file.name}</p>}
+                </div>
+              ) : (
+                // Blob carregado com sucesso
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm text-green-700 font-medium">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Planilha carregada automaticamente da Etapa 1
+                  </div>
+
+                  {/* Aviso + upload complementar se ÚNICO AUTO faltar */}
+                  {needsUnicoAuto && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3">
+                      <div className="flex items-start gap-2 text-amber-800">
+                        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium">Aba ÚNICO AUTO não encontrada</p>
+                          <p className="text-xs">
+                            Esta aba é gerada pelo Financeiro e contém as consultas por loja.
+                            Envie o arquivo do Financeiro que contém essa aba para continuar.
+                          </p>
+                        </div>
+                      </div>
+                      <input ref={uniAutoRef} type="file" accept=".xlsx,.xls" className="hidden"
+                        onChange={handleUnicoAutoFile} />
+                      <Button size="sm" variant="outline" onClick={() => uniAutoRef.current?.click()}>
+                        <Upload className="h-4 w-4" /> Enviar arquivo com ÚNICO AUTO
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )
+            ) : (
+              // ── Fluxo manual (sem processoId) ── */}
+              <>
+                <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) doParse(f); e.target.value = ""; }} />
+                <Button onClick={() => fileRef.current?.click()} disabled={parsing}>
+                  <Upload className="h-4 w-4" /> {parsing ? "Lendo…" : file ? "Trocar arquivo" : "Enviar planilha"}
+                </Button>
+                {file && <p className="text-sm text-muted-foreground">{file.name}</p>}
+              </>
+            )}
 
             {parsed && (
               <div className="border rounded-md p-4 space-y-3 bg-muted/30">
@@ -502,7 +608,7 @@ function NovoRateioPage() {
             )}
 
             <div className="flex justify-end">
-              <Button onClick={() => setStep(2)} disabled={!parsed}>
+              <Button onClick={() => setStep(2)} disabled={!parsed || needsUnicoAuto}>
                 Continuar <ChevronRight className="h-4 w-4" />
               </Button>
             </div>

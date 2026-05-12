@@ -168,18 +168,37 @@ function DivisaoPage() {
     setSaving(true);
     try {
       const mesDate = mes + "-01"; // date no banco
+
+      // Salva o arquivo no Storage para que a Etapa 2 não precise re-upload
+      let storagePath: string | null = null;
+      if (file) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const path = `processos/${user.id}/${mesDate}.xlsx`;
+          const { error: upErr } = await supabase.storage
+            .from("rateio-uploads")
+            .upload(path, file, { upsert: true });
+          if (upErr) {
+            console.warn("Falha ao guardar arquivo no Storage:", upErr.message);
+          } else {
+            storagePath = path;
+          }
+        }
+      }
+
       const { error } = await supabase
         .from("processos_serasa")
         .upsert(
           {
-            mes_referencia:      mesDate,
-            etapa1_status:       "concluida",
-            etapa1_resultado:    summary as unknown as import("@/integrations/supabase/types").Json,
-            etapa1_pcv_inicio:   pcvInicio,
-            etapa1_pcv_fim:      pcvFim,
-            etapa1_pct_cons_min: pctConsMin,
-            etapa1_pct_pc_fixo:  pctPcFixo,
-            etapa1_concluida_em: new Date().toISOString(),
+            mes_referencia:        mesDate,
+            etapa1_status:         "concluida",
+            etapa1_resultado:      summary as unknown as import("@/integrations/supabase/types").Json,
+            etapa1_pcv_inicio:     pcvInicio,
+            etapa1_pcv_fim:        pcvFim,
+            etapa1_pct_cons_min:   pctConsMin,
+            etapa1_pct_pc_fixo:    pctPcFixo,
+            etapa1_concluida_em:   new Date().toISOString(),
+            arquivo_storage_path:  storagePath,
           },
           { onConflict: "mes_referencia" },
         );
