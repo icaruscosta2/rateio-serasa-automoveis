@@ -62,7 +62,6 @@ const SEG_LABELS: Record<string, string> = {
   AUTOMOVEIS:   "Automóveis",
   CAMINHOES:    "Pesados",
   PESADOS:      "Pesados",
-  MOTOS:        "Motos",
   MOTOCICLETAS: "Motocicletas",
   MAQUINAS:     "Máquinas",
   TRATORES:     "Tratores",
@@ -71,8 +70,7 @@ const SEG_LABELS: Record<string, string> = {
 
 /** Mapeamento de nomes do banco para nomes internos do tipo Segmento */
 const DB_SEG_TO_CODE: Record<string, string> = {
-  PESADOS:      "CAMINHOES",
-  MOTOCICLETAS: "MOTOS",
+  PESADOS: "CAMINHOES",
 };
 
 function formatMes(d: string) {

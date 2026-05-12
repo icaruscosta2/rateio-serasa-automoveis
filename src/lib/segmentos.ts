@@ -2,7 +2,7 @@
  * Mapeamento bandeira → segmento de rateio.
  * Atualizar aqui quando novas bandeiras entrarem.
  */
-export type Segmento = "AUTOMOVEIS" | "CAMINHOES" | "MAQUINAS" | "TRATORES" | "MOTOS" | "SERVICOS";
+export type Segmento = "AUTOMOVEIS" | "CAMINHOES" | "MAQUINAS" | "TRATORES" | "MOTOCICLETAS" | "SERVICOS";
 
 const MAP: Record<string, Segmento> = {
   // Automóveis
@@ -24,8 +24,8 @@ const MAP: Record<string, Segmento> = {
   JCB: "MAQUINAS",
   // Tratores
   MASSEY: "TRATORES",
-  // Motos
-  "HONDA MOTOS": "MOTOS",
+  // Motocicletas
+  "HONDA MOTOS": "MOTOCICLETAS",
   // Serviços
   LOCADORA: "SERVICOS",
   CORRETORA: "SERVICOS",

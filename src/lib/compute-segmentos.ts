@@ -68,15 +68,15 @@ export interface SegmentConfigMaps {
 /** Valores padrão (usados como fallback se o banco não tiver configuração) */
 export const DEFAULT_SEGMENT_CONFIG_MAPS: SegmentConfigMaps = {
   monitoramento: new Map([
-    ["AUTOMOVEIS", 14],
-    ["CAMINHOES",   4],
-    ["MOTOS",       3],
-    ["SERVICOS",    4],
+    ["AUTOMOVEIS",   14],
+    ["CAMINHOES",     4],
+    ["MOTOCICLETAS",  3],
+    ["SERVICOS",      4],
   ]),
   pcFixo: new Map([
-    ["AUTOMOVEIS", 14],
-    ["CAMINHOES",   4],
-    ["MOTOS",       3],
+    ["AUTOMOVEIS",   14],
+    ["CAMINHOES",     4],
+    ["MOTOCICLETAS",  3],
   ]),
 };
 

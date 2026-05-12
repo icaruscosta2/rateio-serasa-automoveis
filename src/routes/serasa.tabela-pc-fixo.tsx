@@ -23,13 +23,12 @@ export const Route = createFileRoute("/serasa/tabela-pc-fixo")({
 
 const SEG_LABELS: Record<string, string> = {
   AUTOMOVEIS:   "Automóveis",
+  CAMINHOES:    "Pesados",
   PESADOS:      "Pesados",
   MOTOCICLETAS: "Motocicletas",
-  SERVICOS:     "Serviços",
-  CAMINHOES:    "Pesados",
-  MOTOS:        "Motos",
   MAQUINAS:     "Máquinas",
   TRATORES:     "Tratores",
+  SERVICOS:     "Serviços",
 };
 
 interface ConfigRow {
