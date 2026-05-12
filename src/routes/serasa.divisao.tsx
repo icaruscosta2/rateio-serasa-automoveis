@@ -13,8 +13,12 @@ import {
   TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Upload, CheckCircle2, History, ChevronDown, ChevronRight } from "lucide-react";
+import { Upload, CheckCircle2, History, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { parseRateioWorkbook, type ParseResult } from "@/lib/parse-rateio";
 import {
   computeSegmentos,
@@ -45,6 +49,7 @@ interface ProcessoRow {
   etapa1_pcv_fim: string | null;
   etapa1_concluida_em: string | null;
   etapa1_resultado: SegmentSummary | null;
+  arquivo_storage_path: string | null;
   rateio_id: string | null;
 }
 
@@ -72,6 +77,8 @@ function DivisaoPage() {
   const [processos, setProcessos] = useState<ProcessoRow[]>([]);
   const [loadingProcessos, setLoadingProcessos] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [toDelete, setToDelete]     = useState<ProcessoRow | null>(null);
+  const [deleting, setDeleting]     = useState(false);
 
   // Formulário
   const [mes, setMes] = useState(() => {
@@ -223,6 +230,32 @@ function DivisaoPage() {
     }
   };
 
+  const handleDeleteProcesso = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      // Remove arquivo do Storage (se existir)
+      if (toDelete.arquivo_storage_path) {
+        await supabase.storage
+          .from("rateio-uploads")
+          .remove([toDelete.arquivo_storage_path]);
+      }
+      const { error } = await supabase
+        .from("processos_serasa")
+        .delete()
+        .eq("id", toDelete.id);
+      if (error) throw error;
+      setProcessos((prev) => prev.filter((p) => p.id !== toDelete.id));
+      if (expandedId === toDelete.id) setExpandedId(null);
+      toast.success("Divisão excluída");
+      setToDelete(null);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao excluir");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const processoDoMes = processos.find(
     (p) => p.mes_referencia.slice(0, 7) === mes,
   );
@@ -254,6 +287,7 @@ function DivisaoPage() {
                   <TableHead>Status</TableHead>
                   <TableHead>Período PCV</TableHead>
                   <TableHead className="text-right">Etapa 2</TableHead>
+                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -308,12 +342,23 @@ function DivisaoPage() {
                             <span className="text-xs text-muted-foreground">—</span>
                           )}
                         </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => setToDelete(p)}
+                            aria-label="Excluir divisão"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
 
                       {/* ── Detalhe expandido ── */}
                       {isExpanded && res && (
                         <TableRow className="bg-muted/30 hover:bg-muted/30">
-                          <TableCell colSpan={4} className="p-0">
+                          <TableCell colSpan={5} className="p-0">
                             <div className="px-6 py-4 space-y-3">
                               {/* Totais do grupo */}
                               <div className="grid grid-cols-5 gap-2">
@@ -610,6 +655,38 @@ function DivisaoPage() {
           </div>
         </>
       )}
+
+      {/* ── Confirmar exclusão de processo ── */}
+      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && !deleting && setToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir divisão por segmentos</AlertDialogTitle>
+            <AlertDialogDescription>
+              {toDelete && (
+                <>
+                  Excluir a divisão de <strong>{formatMes(toDelete.mes_referencia)}</strong>?
+                  {toDelete.rateio_id && (
+                    <span className="block mt-2 text-amber-700">
+                      ⚠ Este mês já tem um rateio gerado pelo Financeiro. A divisão será removida,
+                      mas o rateio continuará existindo.
+                    </span>
+                  )}
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={(e) => { e.preventDefault(); handleDeleteProcesso(); }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Excluindo…" : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
