@@ -95,7 +95,7 @@ function UsuariosPcvPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Usuários PCV</h1>
+        <h1 className="text-3xl font-bold">Usuários PC</h1>
         <p className="text-muted-foreground">
           Usuários de "Consulta PF" e seu segmento na Power Curve Variável
         </p>

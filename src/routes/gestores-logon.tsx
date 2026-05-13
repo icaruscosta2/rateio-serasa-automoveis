@@ -22,7 +22,7 @@ export const Route = createFileRoute("/gestores-logon")({
   ),
 });
 
-const SEGMENTOS = ["AUTOMOVEIS", "PESADOS", "MOTOCICLETAS"];
+const SEGMENTOS = ["AUTOMOVEIS", "PESADOS", "MOTOCICLETAS", "SERVICOS"];
 
 interface GestorLogon {
   id: string;

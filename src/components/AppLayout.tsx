@@ -14,6 +14,8 @@ import {
   ChevronRight,
   Settings2,
   Table2,
+  Landmark,
+  LayoutGrid,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -103,6 +105,8 @@ export function AppLayout({ children }: { children?: React.ReactNode } = {}) {
         {/* ── GRUPO REVEMAR ── */}
         {sectionLabel("Grupo Revemar")}
         {navItem("/empresas", "Empresas", Building2)}
+        {navItem("/centro-custo", "Centro de Custo", LayoutGrid)}
+        {navItem("/conta-contabil", "Conta Contábil", Landmark)}
 
         {/* ── RATEIO DE DESPESAS ── */}
         {sectionLabel("Rateio de Despesas")}
@@ -127,7 +131,7 @@ export function AppLayout({ children }: { children?: React.ReactNode } = {}) {
         {/* Etapa 3 */}
         {navItem(
           "/serasa/envio",
-          "3. Envio ao ERP",
+          "3. Envio ao NBS",
           History,
           true,
           (p) => p === "/serasa/envio",
@@ -157,7 +161,7 @@ export function AppLayout({ children }: { children?: React.ReactNode } = {}) {
 
           {configOpen && (
             <div className="mt-0.5 ml-5 border-l pl-2 space-y-0.5">
-              {navItem("/usuarios-pcv", "Usuários PCV", Users)}
+              {navItem("/usuarios-pcv", "Usuários PC", Users)}
               {navItem("/gestores-logon", "Gestores ADM", UserCog)}
               {navItem("/serasa/tabela-monitoramento", "Tabela Monitoramento", Table2)}
               {navItem("/serasa/tabela-pc-fixo", "Tabela PC Fixo", Table2)}

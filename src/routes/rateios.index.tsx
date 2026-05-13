@@ -93,7 +93,7 @@ function RateiosListPage() {
       {disponiveis.length > 0 && (
         <div className="space-y-2">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            Disponível para distribuição
+            Disponível para rateio entre lojas — Automóveis
           </h2>
           {disponiveis.map((p) => (
             <Link key={p.id} to="/rateios/novo" search={{ processoId: p.id }}>

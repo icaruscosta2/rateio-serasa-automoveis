@@ -17,6 +17,9 @@ import {
   DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { Upload, CheckCircle2, History, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -94,9 +97,18 @@ function DivisaoPage() {
   // Config maps (carregadas do banco)
   const [configMaps, setConfigMaps] = useState<SegmentConfigMaps>(DEFAULT_SEGMENT_CONFIG_MAPS);
 
-  // Dialog de confirmação de método
+  // Dialog 1: confirmação de método
   const [showMethodDialog, setShowMethodDialog] = useState(false);
-  const [visibleTable, setVisibleTable] = useState<"MONITORAMENTO" | "PC_FIXO" | null>(null);
+  const [visibleTable, setVisibleTable] = useState<"MONITORAMENTO" | "PC_FIXO" | "PCV_USUARIOS" | "GESTORES_ADM" | null>(null);
+
+  // Dialog 2: alocação de usuários Consulta PF
+  const [showPcvDialog, setShowPcvDialog] = useState(false);
+  const [pcvOverrides, setPcvOverrides] = useState<Record<string, string>>({});
+
+  // pcv_usuarios table (para "ver tabela" no dialog 1)
+  const [pcvUsuariosTable, setPcvUsuariosTable] = useState<Array<{ user_id: string; segmento: string }>>([]);
+  // gestores_logon table (para "ver tabela" ADM no dialog 1)
+  const [gestoresList, setGestoresList] = useState<Array<{ logon: string; segmento: string }>>([]);
 
   // Formulário
   const [mes, setMes] = useState(() => {
@@ -134,8 +146,12 @@ function DivisaoPage() {
       setAllCompanies(cos ?? []);
 
       const pm = new Map<string, string>();
-      for (const u of pcvs ?? []) pm.set(u.user_id.toUpperCase().trim(), u.segmento);
+      for (const u of pcvs ?? []) pm.set(u.user_id.toLowerCase().trim(), u.segmento);
       setPcvMap(pm);
+      // Tabela completa para exibição no dialog
+      setPcvUsuariosTable(
+        (pcvs ?? []).map((u) => ({ user_id: u.user_id, segmento: u.segmento })),
+      );
 
       const gm = new Map<string, string>();
       for (const g of gests ?? [])
@@ -144,6 +160,7 @@ function DivisaoPage() {
           g.segmento,
         );
       setGestoresMap(gm);
+      setGestoresList((gests ?? []).map((g) => ({ logon: g.logon, segmento: g.segmento })));
 
       // Constrói os mapas de configuração a partir do banco
       const monMap = new Map<string, number>();
@@ -167,6 +184,7 @@ function DivisaoPage() {
     setFile(e.target.files?.[0] ?? null);
     setParsed(null);
     setSummary(null);
+    setPcvOverrides({});
   };
 
   const handleParse = async () => {
@@ -189,10 +207,36 @@ function DivisaoPage() {
     }
   };
 
+  /** Constrói mapa PCV ajustado: linhas diretas + Consulta PF com overrides aplicados */
+  const buildAdjustedPcvMap = (overrides: Record<string, string>): Map<string, number> => {
+    if (!parsed) return new Map();
+    const map = new Map(parsed.pcVariavelLinhasDiretas);
+    for (const { user_id, segmento, count } of parsed.pcvConsultaPfUsers) {
+      const effectiveSeg = overrides[user_id] ?? segmento;
+      if (effectiveSeg) {
+        map.set(effectiveSeg, (map.get(effectiveSeg) ?? 0) + count);
+      }
+    }
+    return map;
+  };
+
   const handleConfirmMethods = () => {
     if (!parsed) return;
-    setSummary(computeSegmentos(parsed, allCompanies, configMaps));
     setShowMethodDialog(false);
+    setVisibleTable(null);
+    // Se há usuários de Consulta PF, abre o Dialog 2 para classificação
+    if (parsed.pcvConsultaPfUsers.length > 0) {
+      setShowPcvDialog(true);
+    } else {
+      // Sem Consulta PF — calcula direto
+      setSummary(computeSegmentos(parsed, allCompanies, configMaps, buildAdjustedPcvMap({})));
+    }
+  };
+
+  const handleConfirmPcvUsers = () => {
+    if (!parsed) return;
+    setSummary(computeSegmentos(parsed, allCompanies, configMaps, buildAdjustedPcvMap(pcvOverrides)));
+    setShowPcvDialog(false);
   };
 
   const handleConfirm = async () => {
@@ -702,8 +746,8 @@ function DivisaoPage() {
                       {
                         label:    "PC Adicional",
                         value:    parsed.pcAdicionalGrupo,
-                        method:   "Proporcional às consultas Power Curve Variável",
-                        tableKey: null,
+                        method:   "Proporcional às consultas PC (por segmento via subproduto2)",
+                        tableKey: "PCV_USUARIOS" as const,
                       },
                       {
                         label:    "F&I (Novos + Seminovos)",
@@ -715,9 +759,9 @@ function DivisaoPage() {
                         label:    "ADM Avulsas",
                         value:    admDialogTotal,
                         method:   "Demonstrativo Serasa (por gestor/segmento)",
-                        tableKey: null,
+                        tableKey: "GESTORES_ADM" as const,
                       },
-                    ] as { label: string; value: number; method: string; tableKey: "MONITORAMENTO" | "PC_FIXO" | null }[]
+                    ] as { label: string; value: number; method: string; tableKey: "MONITORAMENTO" | "PC_FIXO" | "PCV_USUARIOS" | "GESTORES_ADM" | null }[]
                   ).map(({ label, value, method, tableKey }) => (
                     <TableRow key={label}>
                       <TableCell className="font-medium">{label}</TableCell>
@@ -749,54 +793,121 @@ function DivisaoPage() {
                 <div className="border rounded-lg overflow-hidden">
                   <div className="px-3 py-2 bg-muted/50 border-b">
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                      {visibleTable === "MONITORAMENTO" ? "Tabela Monitoramento" : "Tabela PC Fixo"}
+                      {visibleTable === "MONITORAMENTO"
+                        ? "Tabela Monitoramento"
+                        : visibleTable === "PC_FIXO"
+                        ? "Tabela PC Fixo"
+                        : visibleTable === "GESTORES_ADM"
+                        ? "Gestores ADM (cadastro)"
+                        : "Usuários PC (cadastro)"}
                     </p>
                   </div>
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="text-xs">
-                        <TableHead>Segmento</TableHead>
-                        <TableHead className="text-right w-32">Nº de Matrizes</TableHead>
-                        <TableHead className="text-right w-20">%</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {(() => {
-                        const map =
-                          visibleTable === "MONITORAMENTO"
-                            ? configMaps.monitoramento
-                            : configMaps.pcFixo;
-                        const total = Array.from(map.values()).reduce((a, b) => a + b, 0);
-                        return Array.from(map.entries())
-                          .sort(([a], [b]) => a.localeCompare(b))
-                          .map(([seg, qtd]) => (
-                            <TableRow key={seg} className="text-xs">
-                              <TableCell className="py-1.5">{SEG_LABELS[seg] ?? seg}</TableCell>
-                              <TableCell className="text-right py-1.5">{qtd}</TableCell>
-                              <TableCell className="text-right py-1.5 text-muted-foreground">
-                                {total > 0 ? ((qtd / total) * 100).toFixed(2) : "0,00"}%
-                              </TableCell>
-                            </TableRow>
-                          ));
-                      })()}
-                    </TableBody>
-                    <TableFooter>
-                      {(() => {
-                        const map =
-                          visibleTable === "MONITORAMENTO"
-                            ? configMaps.monitoramento
-                            : configMaps.pcFixo;
-                        const total = Array.from(map.values()).reduce((a, b) => a + b, 0);
-                        return (
-                          <TableRow className="text-xs">
-                            <TableCell className="py-1.5 font-bold">Total</TableCell>
-                            <TableCell className="text-right py-1.5 font-bold">{total}</TableCell>
-                            <TableCell className="text-right py-1.5">100,00%</TableCell>
+
+                  {visibleTable === "GESTORES_ADM" ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="text-xs">
+                          <TableHead>Logon</TableHead>
+                          <TableHead className="text-right">Segmento</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {gestoresList.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={2} className="text-xs text-center text-muted-foreground py-3">
+                              Nenhum gestor cadastrado
+                            </TableCell>
                           </TableRow>
-                        );
-                      })()}
-                    </TableFooter>
-                  </Table>
+                        ) : (
+                          gestoresList
+                            .sort((a, b) => a.logon.localeCompare(b.logon))
+                            .map((g) => (
+                              <TableRow key={g.logon} className="text-xs">
+                                <TableCell className="py-1.5 font-mono">{g.logon}</TableCell>
+                                <TableCell className="text-right py-1.5">
+                                  {SEG_LABELS[g.segmento] ?? g.segmento}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  ) : visibleTable === "PCV_USUARIOS" ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="text-xs">
+                          <TableHead>Usuário</TableHead>
+                          <TableHead className="text-right">Segmento</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {pcvUsuariosTable.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={2} className="text-xs text-center text-muted-foreground py-3">
+                              Nenhum usuário cadastrado
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          pcvUsuariosTable
+                            .sort((a, b) => a.user_id.localeCompare(b.user_id))
+                            .map((u) => (
+                              <TableRow key={u.user_id} className="text-xs">
+                                <TableCell className="py-1.5 font-mono">{u.user_id}</TableCell>
+                                <TableCell className="text-right py-1.5">
+                                  {SEG_LABELS[u.segmento] ?? u.segmento}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="text-xs">
+                          <TableHead>Segmento</TableHead>
+                          <TableHead className="text-right w-32">Nº de Matrizes</TableHead>
+                          <TableHead className="text-right w-20">%</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(() => {
+                          const map =
+                            visibleTable === "MONITORAMENTO"
+                              ? configMaps.monitoramento
+                              : configMaps.pcFixo;
+                          const total = Array.from(map.values()).reduce((a, b) => a + b, 0);
+                          return Array.from(map.entries())
+                            .sort(([a], [b]) => a.localeCompare(b))
+                            .map(([seg, qtd]) => (
+                              <TableRow key={seg} className="text-xs">
+                                <TableCell className="py-1.5">{SEG_LABELS[seg] ?? seg}</TableCell>
+                                <TableCell className="text-right py-1.5">{qtd}</TableCell>
+                                <TableCell className="text-right py-1.5 text-muted-foreground">
+                                  {total > 0 ? ((qtd / total) * 100).toFixed(2) : "0,00"}%
+                                </TableCell>
+                              </TableRow>
+                            ));
+                        })()}
+                      </TableBody>
+                      <TableFooter>
+                        {(() => {
+                          const map =
+                            visibleTable === "MONITORAMENTO"
+                              ? configMaps.monitoramento
+                              : configMaps.pcFixo;
+                          const total = Array.from(map.values()).reduce((a, b) => a + b, 0);
+                          return (
+                            <TableRow className="text-xs">
+                              <TableCell className="py-1.5 font-bold">Total</TableCell>
+                              <TableCell className="text-right py-1.5 font-bold">{total}</TableCell>
+                              <TableCell className="text-right py-1.5">100,00%</TableCell>
+                            </TableRow>
+                          );
+                        })()}
+                      </TableFooter>
+                    </Table>
+                  )}
                 </div>
               )}
             </div>
@@ -807,6 +918,96 @@ function DivisaoPage() {
               Cancelar
             </Button>
             <Button onClick={handleConfirmMethods}>
+              <CheckCircle2 className="h-4 w-4" />
+              Confirmar e calcular
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dialog 2: Alocação de usuários Consulta PF ── */}
+      <Dialog
+        open={showPcvDialog}
+        onOpenChange={(o) => { if (!o) setShowPcvDialog(false); }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Classificar usuários de Consulta PF</DialogTitle>
+            <DialogDescription>
+              Os usuários abaixo realizaram consultas do tipo <strong>Consulta PF</strong> na PC Variável.
+              Todos precisam ter um segmento definido para calcular o PC Adicional.
+            </DialogDescription>
+          </DialogHeader>
+
+          {parsed && (
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Usuário</TableHead>
+                    <TableHead className="text-right w-20">Consultas</TableHead>
+                    <TableHead className="w-44">Segmento</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {parsed.pcvConsultaPfUsers.map(({ user_id, segmento, count }) => {
+                    const effective = pcvOverrides[user_id] ?? segmento ?? "";
+                    const isUnallocated = !effective;
+                    return (
+                      <TableRow key={user_id} className={isUnallocated ? "bg-destructive/5" : ""}>
+                        <TableCell className="font-mono text-sm">{user_id}</TableCell>
+                        <TableCell className="text-right text-sm">{count}</TableCell>
+                        <TableCell>
+                          <Select
+                            value={effective}
+                            onValueChange={(val) =>
+                              setPcvOverrides((prev) => ({ ...prev, [user_id]: val }))
+                            }
+                          >
+                            <SelectTrigger
+                              className={`h-8 text-xs ${isUnallocated ? "border-destructive" : ""}`}
+                            >
+                              <SelectValue placeholder="Selecione…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="AUTOMOVEIS">Automóveis</SelectItem>
+                              <SelectItem value="CAMINHOES">Pesados</SelectItem>
+                              <SelectItem value="MOTOCICLETAS">Motocicletas</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+
+              {parsed.pcvConsultaPfUsers.some(
+                ({ user_id, segmento }) => !pcvOverrides[user_id] && !segmento
+              ) && (
+                <p className="text-xs text-destructive font-medium">
+                  ⚠ Todos os usuários devem ter segmento definido antes de confirmar.
+                </p>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setShowPcvDialog(false); setShowMethodDialog(true); }}
+            >
+              Voltar
+            </Button>
+            <Button
+              onClick={handleConfirmPcvUsers}
+              disabled={
+                !parsed ||
+                parsed.pcvConsultaPfUsers.some(
+                  ({ user_id, segmento }) => !pcvOverrides[user_id] && !segmento
+                )
+              }
+            >
               <CheckCircle2 className="h-4 w-4" />
               Confirmar e calcular
             </Button>

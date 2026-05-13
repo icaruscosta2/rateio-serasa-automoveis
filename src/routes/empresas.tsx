@@ -125,19 +125,26 @@ function EmpresasPage() {
   const handleUpload = async (file: File) => {
     try {
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf);
+      const isCsv = file.name.toLowerCase().endsWith(".csv");
+      let wb: XLSX.WorkBook;
+      if (isCsv) {
+        const text = new TextDecoder("windows-1252").decode(new Uint8Array(buf));
+        wb = XLSX.read(text, { type: "string", FS: ";" });
+      } else {
+        wb = XLSX.read(buf);
+      }
       const sheet = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null });
       if (!json.length) throw new Error("Planilha vazia");
 
       const records = json
         .map((row) => {
+          const normKey = (s: string) =>
+            s.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
           const get = (...keys: string[]) => {
-            for (const k of keys) {
-              const found = Object.keys(row).find(
-                (kk) => kk.trim().toLowerCase() === k.trim().toLowerCase(),
-              );
-              if (found) return row[found];
+            const targets = keys.map(normKey);
+            for (const kk of Object.keys(row)) {
+              if (targets.includes(normKey(kk))) return row[kk];
             }
             return null;
           };
@@ -158,7 +165,7 @@ function EmpresasPage() {
             cod_matriz: Number(get("COD_MATRIZ")) || null,
             segmento: get("SEGMENTO") ? String(get("SEGMENTO")).toUpperCase() : null,
             bandeira: get("BANDEIRA") ? String(get("BANDEIRA")) : null,
-            tipo_negocio: get("TIPO_NEGOCIO", "TIPO NEGOCIO") ? String(get("TIPO_NEGOCIO", "TIPO NEGOCIO")) : null,
+            tipo_negocio: get("TIPO_NEGOCIO", "TIPO NEGOCIO", "AUTOS / CONTÁBIL", "AUTOS / CONTABIL", "AUTOS/CONTABIL") ? String(get("TIPO_NEGOCIO", "TIPO NEGOCIO", "AUTOS / CONTÁBIL", "AUTOS / CONTABIL", "AUTOS/CONTABIL")) : null,
             grupo_empresa: get("GRUPO_EMPRESA") ? String(get("GRUPO_EMPRESA")) : null,
             is_matriz: principal !== null && principal === cod,
             ativo: true,

@@ -24,15 +24,22 @@ export interface ParseResult {
   intranetSeminovosPorCnpj: Map<string, number>;
   // Único Auto — referência (mantida para diagnóstico)
   unicoAutoPorCnpj: Map<string, number>;
-  // Power Curve Variável — base oficial para rateio do PC Adicional (consultas por CNPJ)
-  // Numeradores: contagem por CNPJ APENAS das linhas que casam o filtro
-  // (Automóveis + Consulta PF dos usuários permitidos).
+  // Power Curve Variável — base oficial para rateio do PC Adicional
   pcVariavelPorCnpj: Map<string, number>;
-  // Denominador: TOTAL de linhas da aba Power Curve Variável (todas, sem filtro).
-  // É essa proporção que define quanto do PC Adicional vai para Automóveis.
+  // Total de linhas da aba PCV (todas, sem filtro — diagnóstico)
   pcVariavelTotalLinhas: number;
-  pcVariavelLinhasAuto: number; // = soma dos numeradores filtrados
-  // Usuários de "Consulta PF" encontrados na planilha que NÃO estão no cadastro
+  // Linhas por segmento a partir do mapeamento direto de subproduto2
+  // (Automóveis→AUTOMOVEIS, Motos→MOTOCICLETAS, Pesados→CAMINHOES)
+  pcVariavelLinhasDiretas: Map<string, number>;
+  // Linhas por segmento combinando diretas + Consulta PF alocada via pcv_usuarios
+  // Este é o mapa usado pelo compute-segmentos para distribuir o PC Adicional.
+  pcVariavelLinhasPorSegmento: Map<string, number>;
+  // Convenience: linhas AUTOMOVEIS (diretas + Consulta PF auto) — backward compat
+  pcVariavelLinhasAuto: number;
+  // Todos os usuários de "Consulta PF" encontrados na planilha
+  // segmento = null → não cadastrado (deve ser alocado no Dialog 2)
+  pcvConsultaPfUsers: Array<{ user_id: string; segmento: string | null; count: number }>;
+  // Usuários de "Consulta PF" SEM segmento (convenience para backward compat)
   pcvUsuariosDesconhecidos: string[];
   // Logons do Demonstrativo (não PC CREDITO) que NÃO estão no cadastro de Gestores
   admLogonsDesconhecidos: string[];
@@ -185,7 +192,10 @@ export function parseRateioWorkbook(
     unicoAutoPorCnpj: new Map(),
     pcVariavelPorCnpj: new Map(),
     pcVariavelTotalLinhas: 0,
+    pcVariavelLinhasDiretas: new Map(),
+    pcVariavelLinhasPorSegmento: new Map(),
     pcVariavelLinhasAuto: 0,
+    pcvConsultaPfUsers: [],
     pcvUsuariosDesconhecidos: [],
     admLogonsDesconhecidos: [],
     abasEncontradas: wb.SheetNames,
@@ -374,7 +384,11 @@ export function parseRateioWorkbook(
   }
 
   // ============= Power Curve Variável =============
-  // Conta consultas por CNPJ. Cada linha = 1 consulta (usuário fez na PC Variável).
+  // Cada linha = 1 consulta. Distribui por segmento com base em subproduto2:
+  //   "Automóveis" → AUTOMOVEIS (direto)
+  //   "Motos"      → MOTOCICLETAS (direto)
+  //   "Pesados"    → CAMINHOES (direto)
+  //   "Consulta PF"→ user_id lookup na tabela pcv_usuarios
   const pcvSheet = findSheet(wb, [
     "Power Curve Variavel",
     "Power Curve Variável",
@@ -384,12 +398,9 @@ export function parseRateioWorkbook(
   ]);
   if (!pcvSheet) {
     result.warnings.push(
-      "Aba 'Power Curve Variável' não encontrada — PC Adicional cairá em fallback (Único Auto / Intranet).",
+      "Aba 'Power Curve Variável' não encontrada — PC Adicional não poderá ser calculado.",
     );
   } else {
-    // Cabeçalho real da PCV: subproduto2, user_id, tipo_doc, doc, ...
-    // (NÃO existe coluna "CNPJ" nesta aba — o documento vem em "doc",
-    // e o tipo é indicado em "tipo_doc".)
     let rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["subproduto2", "user_id"]);
     if (rows.length === 0) {
       rows = sheetToRowsByHeader(wb.Sheets[pcvSheet], ["subproduto2"]);
@@ -399,24 +410,30 @@ export function parseRateioWorkbook(
         "Power Curve Variável: cabeçalho 'subproduto2' não localizado.",
       );
     }
-    // Filtro: subproduto2 = "Automóveis" OU
-    //        (subproduto2 = "Consulta PF" E user_id mapeado a um segmento no cadastro)
-    // O mapa vem do banco (tabela pcv_usuarios): user_id → segmento.
-    // Se não for passado, nenhuma "Consulta PF" será contabilizada.
+
+    // Normaliza o mapa pcv_usuarios: user_id (lower) → segmento (upper)
     const pcvUserSegmento = new Map<string, string>();
     if (pcvUsuariosPf) {
       for (const [uid, seg] of pcvUsuariosPf) {
-        pcvUserSegmento.set(uid.toLowerCase(), seg.toUpperCase());
+        pcvUserSegmento.set(uid.toLowerCase().trim(), seg.toUpperCase().trim());
       }
     }
-    let pcvAuto = 0;
-    let pcvPfAuto = 0;    // Consulta PF mapeada para AUTOMOVEIS
-    let pcvPfOutros = 0;  // Consulta PF mapeada para outros segmentos
-    let pcvDescartadas = 0;
-    let pcvTotal = 0;
+
+    // Mapeamento direto subproduto2 → código de segmento
+    const sub2ToSeg: Record<string, string> = {
+      [norm("Automóveis")]: "AUTOMOVEIS",
+      [norm("Automoveis")]:  "AUTOMOVEIS",
+      [norm("Motos")]:       "MOTOCICLETAS",
+      [norm("Pesados")]:     "CAMINHOES",
+    };
+
+    const pcvLinhasDiretas = new Map<string, number>();
+    // user_id → { segmento do cadastro ou null, contagem de linhas }
+    const consultaPfMap = new Map<string, { segmento: string | null; count: number }>();
     const sub2Counts = new Map<string, number>();
+    let pcvTotal = 0;
     let userPreenchido = 0;
-    const desconhecidosSet = new Set<string>();
+
     for (const r of rows) {
       pcvTotal++;
       const sub2Raw = String(getLoose(r, "subproduto2", "sub produto 2", "subproduto 2") ?? "");
@@ -424,41 +441,66 @@ export function parseRateioWorkbook(
       const user = String(getLoose(r, "user_id", "userid", "usuario") ?? "")
         .trim()
         .toLowerCase();
+
       if (sub2Raw.trim()) sub2Counts.set(sub2Raw.trim(), (sub2Counts.get(sub2Raw.trim()) ?? 0) + 1);
       if (user) userPreenchido++;
-      const isAuto = sub2 === norm("Automóveis") || sub2 === norm("Automoveis");
-      const isConsultaPf = sub2 === norm("Consulta PF") || sub2.includes("CONSULTA PF");
-      if (isConsultaPf && user && !pcvUserSegmento.has(user)) {
-        // Usuário de Consulta PF não cadastrado — registra para o popup
-        desconhecidosSet.add(user);
-      }
-      const segmentoPf = isConsultaPf ? pcvUserSegmento.get(user) : undefined;
-      const isPfPermitido = isConsultaPf && segmentoPf !== undefined;
-      if (!isAuto && !isPfPermitido) {
-        pcvDescartadas++;
+
+      // 1) Mapeamento direto
+      const directSeg = sub2ToSeg[sub2];
+      if (directSeg) {
+        pcvLinhasDiretas.set(directSeg, (pcvLinhasDiretas.get(directSeg) ?? 0) + 1);
         continue;
       }
-      // Conta como Automóveis se subproduto2="Automóveis" OU se o usuário de
-      // "Consulta PF" está mapeado para AUTOMOVEIS.
-      // Usuários mapeados para outros segmentos (PESADOS, MOTOCICLETAS) NÃO
-      // entram na fatia de Automóveis — são contados separadamente.
-      if (isAuto) pcvAuto++;
-      else if (segmentoPf === "AUTOMOVEIS") pcvPfAuto++;
-      else pcvPfOutros++;
+
+      // 2) Consulta PF → busca no cadastro
+      const isConsultaPf = sub2 === norm("Consulta PF") || sub2.includes("CONSULTA PF");
+      if (isConsultaPf) {
+        const segDb = user ? (pcvUserSegmento.get(user) ?? null) : null;
+        const cur = consultaPfMap.get(user) ?? { segmento: segDb, count: 0 };
+        cur.count++;
+        consultaPfMap.set(user, cur);
+        continue;
+      }
+      // Outros subproduto2 são ignorados silenciosamente
     }
-    result.pcvUsuariosDesconhecidos = Array.from(desconhecidosSet);
+
+    // Monta pcvConsultaPfUsers
+    result.pcvConsultaPfUsers = Array.from(consultaPfMap.entries())
+      .map(([user_id, { segmento, count }]) => ({ user_id, segmento, count }))
+      .sort((a, b) => b.count - a.count);
+
+    result.pcVariavelLinhasDiretas = pcvLinhasDiretas;
     result.pcVariavelTotalLinhas = pcvTotal;
-    result.pcVariavelLinhasAuto = pcvAuto + pcvPfAuto;
-    const pctAuto = pcvTotal > 0 ? ((pcvAuto + pcvPfAuto) / pcvTotal) * 100 : 0;
+
+    // Mapa combinado: diretas + Consulta PF alocada
+    const linhasPorSeg = new Map(pcvLinhasDiretas);
+    for (const { segmento, count } of result.pcvConsultaPfUsers) {
+      if (segmento) {
+        linhasPorSeg.set(segmento, (linhasPorSeg.get(segmento) ?? 0) + count);
+      }
+    }
+    result.pcVariavelLinhasPorSegmento = linhasPorSeg;
+
+    // Convenience fields (backward compat)
+    result.pcVariavelLinhasAuto = linhasPorSeg.get("AUTOMOVEIS") ?? 0;
+    result.pcvUsuariosDesconhecidos = result.pcvConsultaPfUsers
+      .filter((u) => !u.segmento)
+      .map((u) => u.user_id);
+
+    // Diagnóstico
+    const totalAlocadas = Array.from(linhasPorSeg.values()).reduce((a, b) => a + b, 0);
+    const detalhes = Array.from(linhasPorSeg.entries())
+      .map(([s, n]) => `${s}: ${n}`)
+      .join(", ");
     result.warnings.push(
-      `Power Curve Variável: ${pcvAuto + pcvPfAuto}/${pcvTotal} linhas para Automóveis (${pctAuto.toFixed(2)}%) — ${pcvAuto} Automóveis + ${pcvPfAuto} Consulta PF Auto; ${pcvPfOutros} Consulta PF outros segmentos; ${pcvDescartadas} descartadas.`,
+      `Power Curve Variável: ${pcvTotal} linhas total; ${totalAlocadas} alocadas (${detalhes || "nenhuma"}).`,
     );
-    if (desconhecidosSet.size > 0) {
+    if (result.pcvUsuariosDesconhecidos.length > 0) {
       result.warnings.push(
-        `Power Curve Variável: ${desconhecidosSet.size} usuário(s) de "Consulta PF" não cadastrado(s): ${Array.from(desconhecidosSet).join(", ")} — não contabilizados até classificação.`,
+        `Power Curve Variável: ${result.pcvUsuariosDesconhecidos.length} usuário(s) de "Consulta PF" sem segmento: ${result.pcvUsuariosDesconhecidos.join(", ")} — devem ser classificados no próximo passo.`,
       );
     }
-    if (pcvTotal > 0 && pcvAuto + pcvPfAuto === 0) {
+    if (pcvTotal > 0 && totalAlocadas === 0) {
       const colsDetectadas = rows[0] ? Object.keys(rows[0]).join(" | ") : "(nenhuma)";
       const topSub2 = Array.from(sub2Counts.entries())
         .sort((a, b) => b[1] - a[1])

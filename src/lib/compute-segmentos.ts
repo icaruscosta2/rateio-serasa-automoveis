@@ -97,6 +97,9 @@ export function computeSegmentos(
   parsed: ParseResult,
   todasEmpresas: EmpresaLean[],
   configMaps: SegmentConfigMaps = DEFAULT_SEGMENT_CONFIG_MAPS,
+  /** Mapa ajustado de linhas PCV por segmento (inclui overrides do Dialog 2).
+   *  Se omitido, usa parsed.pcVariavelLinhasPorSegmento. */
+  pcvLinhasOverride?: Map<string, number>,
 ): SegmentSummary {
 
   // 1. Monta mapa CNPJ → segmento (deduplica: prioriza quem tem segmento)
@@ -138,28 +141,19 @@ export function computeSegmentos(
     }
   }
 
-  // 4. PC Adicional por segmento
-  //    AUTOMÓVEIS: usa a proporção já calculada pelo PCV (pcVariavelLinhasAuto / total)
-  //    Outros segmentos: distribuição pelo volume Intranet (aproximação inicial)
-  const pcvShare = parsed.pcVariavelTotalLinhas > 0
-    ? parsed.pcVariavelLinhasAuto / parsed.pcVariavelTotalLinhas
-    : 0;
+  // 4. PC Adicional por segmento — proporcional às linhas PCV por segmento
+  //    Usa pcvLinhasOverride (ajustado pelo Dialog 2) ou parsed.pcVariavelLinhasPorSegmento.
+  const effectivePcvLinhas = pcvLinhasOverride ?? parsed.pcVariavelLinhasPorSegmento;
+  const totalPcvLinhas = Array.from(effectivePcvLinhas?.values() ?? []).reduce((a, b) => a + b, 0);
   const pcAdicionalPorSeg = new Map<Segmento, number>();
-  if (pcvShare > 0) {
-    pcAdicionalPorSeg.set("AUTOMOVEIS", parsed.pcAdicionalGrupo * pcvShare);
-    const pcaResto = parsed.pcAdicionalGrupo * (1 - pcvShare);
-    const intranetSemAuto = totalIntranet - (intranetTotais.get("AUTOMOVEIS") ?? 0);
-    if (intranetSemAuto > 0) {
-      for (const [seg, qTot] of intranetTotais) {
-        if (seg === "AUTOMOVEIS") continue;
-        pcAdicionalPorSeg.set(seg, (pcaResto * qTot) / intranetSemAuto);
-      }
+  if (effectivePcvLinhas && totalPcvLinhas > 0) {
+    for (const [seg, linhas] of effectivePcvLinhas) {
+      pcAdicionalPorSeg.set(seg as Segmento, (parsed.pcAdicionalGrupo * linhas) / totalPcvLinhas);
     }
-  } else {
-    if (totalIntranet > 0) {
-      for (const [seg, qTot] of intranetTotais) {
-        pcAdicionalPorSeg.set(seg, (parsed.pcAdicionalGrupo * qTot) / totalIntranet);
-      }
+  } else if (totalIntranet > 0) {
+    // Fallback: distribui pelo volume Intranet se PCV não disponível
+    for (const [seg, qTot] of intranetTotais) {
+      pcAdicionalPorSeg.set(seg, (parsed.pcAdicionalGrupo * qTot) / totalIntranet);
     }
   }
 

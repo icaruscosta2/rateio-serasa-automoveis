@@ -14,6 +14,81 @@ export type Database = {
   }
   public: {
     Tables: {
+      erp_mapeamento_cc: {
+        Row: {
+          id: string
+          coluna: string
+          descricao: string
+          cod_centro_custo: number | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          coluna: string
+          descricao: string
+          cod_centro_custo?: number | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          coluna?: string
+          descricao?: string
+          cod_centro_custo?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      centro_custo: {
+        Row: {
+          cod_centro_custo: number
+          descricao: string
+          apelido: string | null
+          conta: string | null
+          tipo_conta: string | null
+          ccusto_ativo: boolean
+        }
+        Insert: {
+          cod_centro_custo: number
+          descricao: string
+          apelido?: string | null
+          conta?: string | null
+          tipo_conta?: string | null
+          ccusto_ativo?: boolean
+        }
+        Update: {
+          cod_centro_custo?: number
+          descricao?: string
+          apelido?: string | null
+          conta?: string | null
+          tipo_conta?: string | null
+          ccusto_ativo?: boolean
+        }
+        Relationships: []
+      }
+      conta_contabil: {
+        Row: {
+          cod_contabil: string
+          descricao: string
+          cod_reduzido: number | null
+          tipo_conta: string | null
+          conta_ativa: boolean
+        }
+        Insert: {
+          cod_contabil: string
+          descricao: string
+          cod_reduzido?: number | null
+          tipo_conta?: string | null
+          conta_ativa?: boolean
+        }
+        Update: {
+          cod_contabil?: string
+          descricao?: string
+          cod_reduzido?: number | null
+          tipo_conta?: string | null
+          conta_ativa?: boolean
+        }
+        Relationships: []
+      }
       rateio_config_segmentos: {
         Row: {
           tipo: string

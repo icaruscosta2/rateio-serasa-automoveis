@@ -15,6 +15,8 @@ import { Route as RateiosRouteImport } from './routes/rateios'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as GestoresLogonRouteImport } from './routes/gestores-logon'
 import { Route as EmpresasRouteImport } from './routes/empresas'
+import { Route as ContaContabilRouteImport } from './routes/conta-contabil'
+import { Route as CentroCustoRouteImport } from './routes/centro-custo'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RateiosIndexRouteImport } from './routes/rateios.index'
 import { Route as SerasaTabelaPcFixoRouteImport } from './routes/serasa.tabela-pc-fixo'
@@ -53,6 +55,16 @@ const GestoresLogonRoute = GestoresLogonRouteImport.update({
 const EmpresasRoute = EmpresasRouteImport.update({
   id: '/empresas',
   path: '/empresas',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContaContabilRoute = ContaContabilRouteImport.update({
+  id: '/conta-contabil',
+  path: '/conta-contabil',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CentroCustoRoute = CentroCustoRouteImport.update({
+  id: '/centro-custo',
+  path: '/centro-custo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -104,6 +116,8 @@ const RateiosIdRoute = RateiosIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/centro-custo': typeof CentroCustoRoute
+  '/conta-contabil': typeof ContaContabilRoute
   '/empresas': typeof EmpresasRoute
   '/gestores-logon': typeof GestoresLogonRoute
   '/login': typeof LoginRoute
@@ -121,6 +135,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/centro-custo': typeof CentroCustoRoute
+  '/conta-contabil': typeof ContaContabilRoute
   '/empresas': typeof EmpresasRoute
   '/gestores-logon': typeof GestoresLogonRoute
   '/login': typeof LoginRoute
@@ -138,6 +154,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/centro-custo': typeof CentroCustoRoute
+  '/conta-contabil': typeof ContaContabilRoute
   '/empresas': typeof EmpresasRoute
   '/gestores-logon': typeof GestoresLogonRoute
   '/login': typeof LoginRoute
@@ -157,6 +175,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/centro-custo'
+    | '/conta-contabil'
     | '/empresas'
     | '/gestores-logon'
     | '/login'
@@ -174,6 +194,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/centro-custo'
+    | '/conta-contabil'
     | '/empresas'
     | '/gestores-logon'
     | '/login'
@@ -190,6 +212,8 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/centro-custo'
+    | '/conta-contabil'
     | '/empresas'
     | '/gestores-logon'
     | '/login'
@@ -208,6 +232,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CentroCustoRoute: typeof CentroCustoRoute
+  ContaContabilRoute: typeof ContaContabilRoute
   EmpresasRoute: typeof EmpresasRoute
   GestoresLogonRoute: typeof GestoresLogonRoute
   LoginRoute: typeof LoginRoute
@@ -258,6 +284,20 @@ declare module '@tanstack/react-router' {
       path: '/empresas'
       fullPath: '/empresas'
       preLoaderRoute: typeof EmpresasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/conta-contabil': {
+      id: '/conta-contabil'
+      path: '/conta-contabil'
+      fullPath: '/conta-contabil'
+      preLoaderRoute: typeof ContaContabilRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/centro-custo': {
+      id: '/centro-custo'
+      path: '/centro-custo'
+      fullPath: '/centro-custo'
+      preLoaderRoute: typeof CentroCustoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -362,6 +402,8 @@ const SerasaRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CentroCustoRoute: CentroCustoRoute,
+  ContaContabilRoute: ContaContabilRoute,
   EmpresasRoute: EmpresasRoute,
   GestoresLogonRoute: GestoresLogonRoute,
   LoginRoute: LoginRoute,
