@@ -69,6 +69,7 @@ interface CentroCusto {
 }
 
 interface LinhaLancamento {
+  coluna: string;                  // VN | VU | PC | AT
   cod_recebedor: number;
   nome_recebedor: string;
   cod_pagador: number;
@@ -79,7 +80,7 @@ interface LinhaLancamento {
   conta_contabil: string;
   valor: number;
   data_rateio: string;
-  cc_recebedor: number | string;   // preenchido pelo novo campo
+  cc_recebedor: number | string;
 }
 
 /* ─── Helpers ─── */
@@ -344,6 +345,7 @@ function EnvioPage() {
         if (!mcc || mcc.cod_centro_custo == null) continue;
 
         result.push({
+          coluna:           col,
           cod_recebedor:    fornecedora.cod_empresa,
           nome_recebedor:   fornecedora.nome,
           cod_pagador:      r.cod_empresa,
@@ -518,6 +520,27 @@ function EnvioPage() {
                 )}
               </fieldset>
 
+              {/* Mapeamento produto → CC (resumo compacto) */}
+              {mapeamentos.length > 0 && (
+                <div className="rounded-md border bg-muted/40 px-4 py-2.5 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground mr-1">Produtos → CC:</span>
+                  {COLUNAS_ORDER.map((col) => {
+                    const m = mapCC.get(col);
+                    if (!m) return null;
+                    return (
+                      <span key={col}>
+                        <span className="font-mono font-semibold text-foreground">{col}</span>
+                        {" → "}
+                        <span className="font-mono">{m.cod_centro_custo ?? "—"}</span>
+                        {m.cc_descricao && (
+                          <span className="ml-0.5 text-muted-foreground">({m.cc_descricao})</span>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* CC Recebedor */}
               <fieldset className="space-y-1.5">
                 <legend className="text-sm font-medium mb-1.5">
@@ -552,44 +575,6 @@ function EnvioPage() {
         </CardContent>
       </Card>
 
-      {/* ── Mapeamento CC ── */}
-      {mapeamentos.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Mapeamento de Centros de Custo</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-20">Coluna</TableHead>
-                  <TableHead>Descrição</TableHead>
-                  <TableHead className="w-24 text-right">Cód. CC</TableHead>
-                  <TableHead>Centro de Custo</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {COLUNAS_ORDER.map((col) => {
-                  const m = mapCC.get(col);
-                  if (!m) return null;
-                  return (
-                    <TableRow key={col}>
-                      <TableCell>
-                        <Badge variant="outline" className="font-mono text-xs">{col}</Badge>
-                      </TableCell>
-                      <TableCell className="text-sm">{m.descricao}</TableCell>
-                      <TableCell className="font-mono text-sm text-muted-foreground text-right">
-                        {m.cod_centro_custo ?? "—"}
-                      </TableCell>
-                      <TableCell className="text-sm">{m.cc_descricao ?? "—"}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
 
       {/* ── Preview ── */}
       {(rateioId || loadingResultados) && (
@@ -633,11 +618,12 @@ function EnvioPage() {
                 <Table>
                   <TableHeader className="sticky top-0 bg-card z-10">
                     <TableRow>
+                      <TableHead className="w-16">Produto</TableHead>
                       <TableHead className="w-20 text-right">Cód. Rec.</TableHead>
                       <TableHead>Recebedor</TableHead>
                       <TableHead className="w-20 text-right">Cód. Pag.</TableHead>
                       <TableHead>Pagador</TableHead>
-                      <TableHead className="w-20 text-right">CC</TableHead>
+                      <TableHead className="w-16 text-right">CC</TableHead>
                       <TableHead className="w-36">Conta</TableHead>
                       <TableHead className="text-right w-28">Valor</TableHead>
                       <TableHead className="w-20 text-right">CC Rec.</TableHead>
@@ -646,6 +632,19 @@ function EnvioPage() {
                   <TableBody>
                     {linhas.map((l, i) => (
                       <TableRow key={i}>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              l.coluna === "VN" ? "default"
+                              : l.coluna === "VU" ? "secondary"
+                              : l.coluna === "PC" ? "outline"
+                              : "destructive"
+                            }
+                            className="font-mono text-xs"
+                          >
+                            {l.coluna}
+                          </Badge>
+                        </TableCell>
                         <TableCell className="font-mono text-xs text-right text-muted-foreground">
                           {l.cod_recebedor}
                         </TableCell>
