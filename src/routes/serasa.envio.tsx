@@ -520,26 +520,35 @@ function EnvioPage() {
                 )}
               </fieldset>
 
-              {/* Mapeamento produto → CC (resumo compacto) */}
-              {mapeamentos.length > 0 && (
-                <div className="rounded-md border bg-muted/40 px-4 py-2.5 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground mr-1">Produtos → CC:</span>
-                  {COLUNAS_ORDER.map((col) => {
-                    const m = mapCC.get(col);
-                    if (!m) return null;
-                    return (
-                      <span key={col}>
-                        <span className="font-mono font-semibold text-foreground">{col}</span>
-                        {" → "}
-                        <span className="font-mono">{m.cod_centro_custo ?? "—"}</span>
-                        {m.cc_descricao && (
-                          <span className="ml-0.5 text-muted-foreground">({m.cc_descricao})</span>
-                        )}
-                      </span>
-                    );
-                  })}
+              {/* Composição dos produtos Serasa por coluna */}
+              <div className="rounded-md border bg-muted/40 px-4 py-3 text-xs">
+                <p className="font-medium text-foreground mb-2">Composição por produto Serasa</p>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-1.5">
+                  {(
+                    [
+                      ["VN", "Cons. Mínimo + F&I Novos + ADM"],
+                      ["VU", "F&I Seminovos"],
+                      ["PC", "75% × (PC Fixo + PC Adicional)"],
+                      ["AT", "25% × (PC Fixo + PC Adicional)"],
+                    ] as const
+                  ).map(([col, desc]) => (
+                    <div key={col} className="flex items-baseline gap-2">
+                      <Badge
+                        variant={
+                          col === "VN" ? "default"
+                          : col === "VU" ? "secondary"
+                          : col === "PC" ? "outline"
+                          : "destructive"
+                        }
+                        className="font-mono text-xs shrink-0"
+                      >
+                        {col}
+                      </Badge>
+                      <span className="text-muted-foreground">{desc}</span>
+                    </div>
+                  ))}
                 </div>
-              )}
+              </div>
 
               {/* CC Recebedor */}
               <fieldset className="space-y-1.5">
