@@ -962,13 +962,20 @@ function NovoRateioPage() {
                   <span className="text-sm font-semibold tabular-nums">{brl(preview.fatiaAuto.adm)}</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Partes iguais entre as lojas Automóveis incluídas — gestores cadastrados como segmento
-                  Automóveis (Consultas ADM Avulsas do Demonstrativo)
+                  Partes iguais entre as lojas Automóveis incluídas
                 </p>
-                {parsed.demoFiPefinPfPorLogon.length > 0 && (
-                  <p className="text-[11px] text-muted-foreground">
-                    Logons identificados:{" "}
-                    {parsed.demoFiPefinPfPorLogon.map((l) => `${l.logon} (${brl(l.soma)})`).join(" · ")}
+                {(parsed.admLogonsPorSegmento?.["AUTOMOVEIS"]?.length ?? 0) > 0 ? (
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                    {parsed.admLogonsPorSegmento["AUTOMOVEIS"].map((l) => (
+                      <span key={l.logon} className="text-xs bg-muted rounded px-2 py-0.5 font-medium">
+                        {l.logon}
+                        <span className="ml-1 font-normal text-muted-foreground">{brl(l.soma)}</span>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground italic mt-0.5">
+                    Nenhum gestor ADM identificado para Automóveis nesta planilha.
                   </p>
                 )}
               </div>

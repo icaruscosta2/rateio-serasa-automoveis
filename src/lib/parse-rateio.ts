@@ -43,6 +43,8 @@ export interface ParseResult {
   pcvUsuariosDesconhecidos: string[];
   // Logons do Demonstrativo (não PC CREDITO) que NÃO estão no cadastro de Gestores
   admLogonsDesconhecidos: string[];
+  /** Gestores ADM identificados por segmento, com valor individual (para exibição no popup) */
+  admLogonsPorSegmento: Record<string, Array<{ logon: string; soma: number }>>;
   // Diagnóstico
   abasEncontradas: string[];
   abasFaltando: string[];
@@ -198,6 +200,7 @@ export function parseRateioWorkbook(
     pcvConsultaPfUsers: [],
     pcvUsuariosDesconhecidos: [],
     admLogonsDesconhecidos: [],
+    admLogonsPorSegmento: {},
     abasEncontradas: wb.SheetNames,
     abasFaltando: [],
     warnings: [],
@@ -222,6 +225,8 @@ export function parseRateioWorkbook(
     const pefinPfPorLogon = new Map<string, { count: number; soma: number }>();
     const pefinPjPorLogon = new Map<string, { count: number; soma: number }>();
     const admDesconhecidosSet = new Set<string>();
+    // Mapa auxiliar: segmento → (logon → valor) para montar admLogonsPorSegmento
+    const admLogonsBySeg = new Map<string, Map<string, number>>();
     for (const r of rows) {
       const produto = norm(String(get(r, "Descrição de Produto NF") ?? ""));
       const nomeLogon = norm(String(get(r, "Nome do Logon") ?? ""));
@@ -253,6 +258,12 @@ export function parseRateioWorkbook(
         const admSeg = gestoresLogon?.get(nomeLogon) ?? "AUTOMOVEIS";
         result.admRateadoPorSegmento[admSeg] =
           (result.admRateadoPorSegmento[admSeg] ?? 0) + valor;
+        // Coleta logon individual para exibição no popup de confirmação
+        if (nomeLogon) {
+          if (!admLogonsBySeg.has(admSeg)) admLogonsBySeg.set(admSeg, new Map());
+          const segMap = admLogonsBySeg.get(admSeg)!;
+          segMap.set(nomeLogon, (segMap.get(nomeLogon) ?? 0) + valor);
+        }
         continue;
       }
 
@@ -295,6 +306,11 @@ export function parseRateioWorkbook(
       .map(([logon, v]) => ({ logon, count: v.count, soma: v.soma }))
       .sort((a, b) => b.soma - a.soma);
     result.admLogonsDesconhecidos = Array.from(admDesconhecidosSet);
+    for (const [seg, map] of admLogonsBySeg) {
+      result.admLogonsPorSegmento[seg] = Array.from(map.entries())
+        .map(([logon, soma]) => ({ logon, soma }))
+        .sort((a, b) => b.soma - a.soma);
+    }
     if (outrosFi > 0) {
       const descLabel = admDesconhecidosSet.size > 0
         ? ` Logons não classificados: ${Array.from(admDesconhecidosSet).join(", ")}.`
