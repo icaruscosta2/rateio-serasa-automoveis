@@ -17,8 +17,8 @@ import { Upload, ChevronRight, ChevronLeft, Check, CheckCircle2, AlertTriangle, 
 import { toast } from "sonner";
 import { parseRateioWorkbook, type ParseResult } from "@/lib/parse-rateio";
 import { brl, intBR } from "@/lib/format";
-import { computeRateio } from "@/lib/compute-rateio";
-import { isBandeiraExcluida } from "@/lib/segmentos";
+import { computeRateio, type ConsumoMinimoMethod } from "@/lib/compute-rateio";
+import { isBandeiraExcluida, segmentoDaBandeira } from "@/lib/segmentos";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -64,9 +64,11 @@ function NovoRateioPage() {
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
   const [sel, setSel] = useState<Record<number, { incluida: boolean; matriz: boolean }>>({});
 
-  const [pct, setPct] = useState({
+  const [pct] = useState({
     consumoMinimo: 0.56, pcFixo: 2 / 3, pcAdicional: 0.56, fi: 0.56, adm: 0.56,
   });
+  const [consumoMinimoMethod, setConsumoMinimoMethod] = useState<ConsumoMinimoMethod>("matrizes");
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Auto-carga da planilha salva na Etapa 1
@@ -131,16 +133,8 @@ function NovoRateioPage() {
         setCompanies(rows);
         const init: typeof sel = {};
         rows.forEach((r) => {
-          // Default: desmarca MASSEY (tratores), JCB (máquinas) e VW CAMINHOES.
-          const b = (r.bandeira ?? "")
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .toUpperCase()
-            .trim();
-          const offByDefault =
-            b === "MASSEY" || b === "JCB" || b === "VW CAMINHOES" ||
-            b === "LOCADORA" || b === "CORRETORA" || b === "RGN";
-          init[r.cod_empresa] = { incluida: !offByDefault, matriz: r.is_matriz };
+          const seg = segmentoDaBandeira(r.bandeira);
+          init[r.cod_empresa] = { incluida: seg === "AUTOMOVEIS", matriz: r.is_matriz };
         });
         setSel(init);
       });
@@ -338,8 +332,9 @@ function NovoRateioPage() {
         is_matriz: sel[c.cod_empresa]?.matriz ?? false,
       })),
       pct,
+      consumoMinimoMethod,
     });
-  }, [parsed, companies, sel, pct]);
+  }, [parsed, companies, sel, pct, consumoMinimoMethod]);
 
   const handleSave = async () => {
     if (!parsed || !preview) return;
@@ -828,36 +823,13 @@ function NovoRateioPage() {
       {step === 3 && parsed && preview && (
         <Card>
           <CardHeader>
-            <CardTitle>3. Percentuais e confirmação</CardTitle>
+            <CardTitle>3. Confirmação</CardTitle>
             <CardDescription>
-              Ajuste os % do grupo Automóveis para Consumo Mínimo (Monitoramento) e Power Curve Fixo. As demais rubricas são rateadas por contagem de consultas.
+              Revise os valores calculados para Automóveis e confirme a geração do rateio.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-2 gap-4 max-w-md">
-              {(
-                [
-                  ["consumoMinimo", "Consumo Mínimo (Monitoramento)"],
-                  ["pcFixo", "Power Curve Fixo"],
-                ] as const
-              ).map(([k, label]) => (
-                <div key={k}>
-                  <Label className="text-xs">{label}</Label>
-                  <Input
-                    type="number"
-                    step="0.00000001"
-                    min="0"
-                    max="1"
-                    value={pct[k]}
-                    onChange={(e) => setPct({ ...pct, [k]: Number(e.target.value) })}
-                  />
-                  <p className="text-[10px] text-muted-foreground mt-1">
-                    {(pct[k] * 100).toFixed(4)}%
-                  </p>
-                </div>
-              ))}
-            </div>
-
+            {/* Prévia resumida */}
             <div className="border rounded-md p-4 bg-muted/30 space-y-3">
               <h3 className="font-medium">Prévia (Automóveis)</h3>
               {(() => {
@@ -892,12 +864,136 @@ function NovoRateioPage() {
               <Button variant="outline" onClick={() => setStep(2)}>
                 <ChevronLeft className="h-4 w-4" /> Voltar
               </Button>
-              <Button onClick={handleSave} disabled={saving}>
-                <Check className="h-4 w-4" /> {saving ? "Gerando…" : "Gerar RESUMO RATEIO"}
+              <Button onClick={() => setConfirmOpen(true)} disabled={saving}>
+                <Check className="h-4 w-4" /> Gerar RESUMO RATEIO
               </Button>
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* ── Dialog de confirmação do método de rateio ── */}
+      {preview && parsed && (
+        <Dialog open={confirmOpen} onOpenChange={(v) => { if (!saving) setConfirmOpen(v); }}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Confirmar método de rateio</DialogTitle>
+              <DialogDescription>
+                Revise como cada produto Serasa será distribuído entre as lojas antes de gerar o RESUMO RATEIO.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
+
+              {/* Consumo Mínimo — com seletor de método */}
+              <div className="rounded-md border p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-sm">Consumo Mínimo</span>
+                  <span className="text-sm font-semibold tabular-nums">{brl(preview.fatiaAuto.consumoMinimo)}</span>
+                </div>
+                <Select
+                  value={consumoMinimoMethod}
+                  onValueChange={(v) => setConsumoMinimoMethod(v as ConsumoMinimoMethod)}
+                >
+                  <SelectTrigger className="w-full text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="matrizes">
+                      Dividir entre as matrizes do segmento — {matrizCount} matrizes ·{" "}
+                      {matrizCount > 0 ? brl(preview.fatiaAuto.consumoMinimo / matrizCount) : "—"} cada
+                    </SelectItem>
+                    <SelectItem value="todas">
+                      Divisão igual para todas as lojas — {selectedCount} lojas ·{" "}
+                      {selectedCount > 0 ? brl(preview.fatiaAuto.consumoMinimo / selectedCount) : "—"} cada
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {consumoMinimoMethod === "matrizes"
+                    ? `Apenas matrizes recebem (método atual). Cada uma das ${matrizCount} matrizes recebe ${matrizCount > 0 ? brl(preview.fatiaAuto.consumoMinimo / matrizCount) : "—"}.`
+                    : `Todas as ${selectedCount} lojas incluídas recebem parcela igual de ${selectedCount > 0 ? brl(preview.fatiaAuto.consumoMinimo / selectedCount) : "—"}.`}
+                </p>
+              </div>
+
+              {/* PC Fixo */}
+              <div className="rounded-md border p-3.5 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-sm">PC Fixo</span>
+                  <span className="text-sm font-semibold tabular-nums">{brl(preview.fatiaAuto.pcFixo)}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Partes iguais entre as {selectedCount} lojas incluídas →{" "}
+                  {selectedCount > 0 ? brl(preview.fatiaAuto.pcFixo / selectedCount) : "—"} cada
+                </p>
+              </div>
+
+              {/* PC Adicional */}
+              <div className="rounded-md border p-3.5 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-sm">PC Adicional</span>
+                  <span className="text-sm font-semibold tabular-nums">{brl(preview.fatiaAuto.pcAdicional)}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Proporcional às consultas no Único Auto —{" "}
+                  {intBR(preview.totals.qtdUnicoAuto)} processos entre as lojas incluídas
+                </p>
+              </div>
+
+              {/* F&I */}
+              <div className="rounded-md border p-3.5 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-sm">F&amp;I / Cadastros</span>
+                  <span className="text-sm font-semibold tabular-nums">
+                    {brl((preview.fiPorSegmento["AUTOMOVEIS"] ?? 0))}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Proporcional às consultas na Intranet —{" "}
+                  {intBR(preview.intranetUniversoPorSegmento["AUTOMOVEIS"] ?? 0)} consultas Automóveis de{" "}
+                  {intBR(preview.intranetUniversoTotal)} no universo total
+                </p>
+              </div>
+
+              {/* Consultas ADM */}
+              <div className="rounded-md border p-3.5 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-sm">Consultas ADM Avulsas</span>
+                  <span className="text-sm font-semibold tabular-nums">{brl(preview.fatiaAuto.adm)}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Partes iguais entre as lojas Automóveis incluídas — gestores cadastrados como segmento
+                  Automóveis (Consultas ADM Avulsas do Demonstrativo)
+                </p>
+                {parsed.demoFiPefinPfPorLogon.length > 0 && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Logons identificados:{" "}
+                    {parsed.demoFiPefinPfPorLogon.map((l) => `${l.logon} (${brl(l.soma)})`).join(" · ")}
+                  </p>
+                )}
+              </div>
+
+              {/* Totais */}
+              <div className="rounded-md bg-muted/50 px-4 py-3 text-sm flex justify-between items-center">
+                <span className="text-muted-foreground">Total a distribuir</span>
+                <span className="font-bold text-base tabular-nums">{brl(preview.totals.total)}</span>
+              </div>
+              <p className="text-xs text-muted-foreground text-center pb-1">
+                {selectedCount} lojas · {matrizCount} matrizes
+              </p>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={saving}>
+                Voltar
+              </Button>
+              <Button onClick={handleSave} disabled={saving}>
+                <Check className="h-4 w-4" />
+                {saving ? "Gerando…" : "Confirmar e Gerar"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

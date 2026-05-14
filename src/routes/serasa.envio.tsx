@@ -520,36 +520,6 @@ function EnvioPage() {
                 )}
               </fieldset>
 
-              {/* Composição dos produtos Serasa por coluna */}
-              <div className="rounded-md border bg-muted/40 px-4 py-3 text-xs">
-                <p className="font-medium text-foreground mb-2">Composição por produto Serasa</p>
-                <div className="grid grid-cols-2 gap-x-8 gap-y-1.5">
-                  {(
-                    [
-                      ["VN", "Cons. Mínimo + F&I Novos + ADM"],
-                      ["VU", "F&I Seminovos"],
-                      ["PC", "75% × (PC Fixo + PC Adicional)"],
-                      ["AT", "25% × (PC Fixo + PC Adicional)"],
-                    ] as const
-                  ).map(([col, desc]) => (
-                    <div key={col} className="flex items-baseline gap-2">
-                      <Badge
-                        variant={
-                          col === "VN" ? "default"
-                          : col === "VU" ? "secondary"
-                          : col === "PC" ? "outline"
-                          : "destructive"
-                        }
-                        className="font-mono text-xs shrink-0"
-                      >
-                        {col}
-                      </Badge>
-                      <span className="text-muted-foreground">{desc}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               {/* CC Recebedor */}
               <fieldset className="space-y-1.5">
                 <legend className="text-sm font-medium mb-1.5">
@@ -579,6 +549,36 @@ function EnvioPage() {
                   </p>
                 )}
               </fieldset>
+
+              {/* Composição dos produtos Serasa por coluna */}
+              <div className="rounded-md border bg-muted/40 px-4 py-3 text-xs">
+                <p className="font-medium text-foreground mb-2">Composição por produto Serasa</p>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-1.5">
+                  {(
+                    [
+                      ["VN", "Cons. Mínimo + F&I Novos + ADM"],
+                      ["VU", "F&I Seminovos"],
+                      ["PC", "75% × (PC Fixo + PC Adicional)"],
+                      ["AT", "25% × (PC Fixo + PC Adicional)"],
+                    ] as const
+                  ).map(([col, desc]) => (
+                    <div key={col} className="flex items-baseline gap-2">
+                      <Badge
+                        variant={
+                          col === "VN" ? "default"
+                          : col === "VU" ? "secondary"
+                          : col === "PC" ? "outline"
+                          : "destructive"
+                        }
+                        className="font-mono text-xs shrink-0"
+                      >
+                        {col}
+                      </Badge>
+                      <span className="text-muted-foreground">{desc}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </CardContent>

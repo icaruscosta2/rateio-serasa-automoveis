@@ -1,6 +1,9 @@
 import type { ParseResult } from "./parse-rateio";
 import { segmentoDaBandeira, type Segmento } from "./segmentos";
 
+/** Como o Consumo Mínimo é distribuído entre as empresas incluídas */
+export type ConsumoMinimoMethod = "matrizes" | "todas";
+
 export interface RateioInput {
   parsed: ParseResult;
   empresas: Array<{
@@ -18,6 +21,8 @@ export interface RateioInput {
     fi: number;
     adm: number;
   };
+  /** Método de distribuição do Consumo Mínimo. Default: "matrizes" */
+  consumoMinimoMethod?: ConsumoMinimoMethod;
 }
 
 export interface RateioRow {
@@ -56,7 +61,7 @@ export interface RateioOutput {
   pcvShareAuto: number; // ex.: 250/476
 }
 
-export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOutput {
+export function computeRateio({ parsed, empresas, pct, consumoMinimoMethod = "matrizes" }: RateioInput): RateioOutput {
   const incluidas = empresas.filter((e) => e.incluida);
   const matrizes = incluidas.filter((e) => e.is_matriz);
 
@@ -209,8 +214,14 @@ export function computeRateio({ parsed, empresas, pct }: RateioInput): RateioOut
     const qUnico = qtd(parsed.unicoAutoPorCnpj, e);
     // qPcv: PCV não é base de distribuição (CNPJ é do cliente). Sempre 0.
 
-    const consumoMinimo =
-      seg && e.is_matriz && matrizes.length > 0 ? fatia.consumoMinimo / matrizes.length : 0;
+    const consumoMinimo = (() => {
+      if (!seg) return 0;
+      if (consumoMinimoMethod === "todas") {
+        return incluidas.length > 0 ? fatia.consumoMinimo / incluidas.length : 0;
+      }
+      // "matrizes" (padrão): apenas matrizes recebem
+      return e.is_matriz && matrizes.length > 0 ? fatia.consumoMinimo / matrizes.length : 0;
+    })();
     const pcFixo = seg && incluidas.length > 0 ? fatia.pcFixo / incluidas.length : 0;
 
     // PC Adicional: só Automóveis recebe, distribuído pelo Único Auto.
