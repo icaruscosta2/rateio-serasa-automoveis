@@ -16,6 +16,12 @@ export async function deleteRateio(id: string): Promise<void> {
   const { error } = await supabase.from("rateios").delete().eq("id", id);
   if (error) throw error;
 
+  // Libera o processo Serasa para que possa gerar um novo rateio
+  await supabase
+    .from("processos_serasa")
+    .update({ rateio_id: null })
+    .eq("rateio_id", id);
+
   const path = r?.arquivo_storage_path;
   if (path) {
     const { error: stErr } = await supabase.storage.from("rateio-uploads").remove([path]);

@@ -480,10 +480,15 @@ function DivisaoPage() {
                               <Badge variant="outline">Ver distribuição</Badge>
                             </Link>
                           ) : p.etapa1_status === "concluida" ? (() => {
-                            const hasNegat =
-                              ((p.etapa1_resultado as unknown as {has_negativacoes?: boolean})?.has_negativacoes) ||
-                              (((p.etapa1_resultado as unknown as {negat_valor_total?: number})?.negat_valor_total) ?? 0) > 0;
-                            const bothGreen = !!p.arquivo_storage_path && hasNegat;
+                            const nr = p.etapa1_resultado as unknown as {
+                              has_negativacoes?: boolean;
+                              negat_valor_total?: number;
+                              negat_por_cnpj?: Record<string, number>;
+                            } | null;
+                            const bothGreen =
+                              nr?.has_negativacoes === true ||
+                              (nr?.negat_valor_total ?? 0) > 0 ||
+                              Object.keys(nr?.negat_por_cnpj ?? {}).length > 0;
                             return bothGreen ? (
                               <Link to="/rateios">
                                 <Badge variant="outline" className="text-primary border-primary">
