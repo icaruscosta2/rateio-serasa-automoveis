@@ -558,8 +558,8 @@ function EnvioPage() {
                     [
                       ["VN", "Cons. Mínimo + F&I Novos + ADM"],
                       ["VU", "F&I Seminovos"],
-                      ["PC", "75% × (PC Fixo + PC Adicional)"],
-                      ["AT", "25% × (PC Fixo + PC Adicional)"],
+                      ["PC", "75% × (PC Fixo + PC Adicional + NF Negat.)"],
+                      ["AT", "25% × (PC Fixo + PC Adicional + NF Negat.)"],
                     ] as const
                   ).map(([col, desc]) => (
                     <div key={col} className="flex items-baseline gap-2">

@@ -125,6 +125,7 @@ function DivisaoPage() {
   const [summary, setSummary] = useState<SegmentSummary | null>(null);
   const [parsing, setParsing] = useState(false);
   const [saving,  setSaving]  = useState(false);
+  const [negatValorTotal, setNegatValorTotal] = useState<number>(0);
 
   // Dados de suporte (empresas + mapas de PCV/gestores)
   const [allCompanies, setAllCompanies] = useState<
@@ -229,13 +230,13 @@ function DivisaoPage() {
       setShowPcvDialog(true);
     } else {
       // Sem Consulta PF — calcula direto
-      setSummary(computeSegmentos(parsed, allCompanies, configMaps, buildAdjustedPcvMap({})));
+      setSummary(computeSegmentos(parsed, allCompanies, configMaps, buildAdjustedPcvMap({}), negatValorTotal));
     }
   };
 
   const handleConfirmPcvUsers = () => {
     if (!parsed) return;
-    setSummary(computeSegmentos(parsed, allCompanies, configMaps, buildAdjustedPcvMap(pcvOverrides)));
+    setSummary(computeSegmentos(parsed, allCompanies, configMaps, buildAdjustedPcvMap(pcvOverrides), negatValorTotal));
     setShowPcvDialog(false);
   };
 
@@ -274,13 +275,23 @@ function DivisaoPage() {
         }
       }
 
+      // Enriquece o resultado com dados de negat antes de salvar
+      const resultadoComNegat = {
+        ...summary,
+        negat_valor_total: negatValorTotal,
+        has_negativacoes: parsed.hasNegativacoes,
+        negat_por_segmento: Object.fromEntries(
+          Object.entries(summary.segmentos ?? {}).map(([seg, v]) => [seg, v?.negat ?? 0])
+        ),
+      };
+
       const { error } = await supabase
         .from("processos_serasa")
         .upsert(
           {
             mes_referencia:        mesDate,
             etapa1_status:         "concluida",
-            etapa1_resultado:      summary as unknown as import("@/integrations/supabase/types").Json,
+            etapa1_resultado:      resultadoComNegat as unknown as import("@/integrations/supabase/types").Json,
             etapa1_pcv_inicio:     pcvInicio,
             etapa1_pcv_fim:        pcvFim,
             etapa1_pct_cons_min:   pctConsMin,
@@ -303,6 +314,7 @@ function DivisaoPage() {
       setParsed(null);
       setSummary(null);
       setFile(null);
+      setNegatValorTotal(0);
       if (fileRef.current) fileRef.current.value = "";
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao salvar");
@@ -401,9 +413,20 @@ function DivisaoPage() {
                         </TableCell>
                         <TableCell>
                           {p.etapa1_status === "concluida" ? (
-                            <Badge variant="default" className="gap-1">
-                              <CheckCircle2 className="h-3 w-3" /> Concluída
-                            </Badge>
+                            <div className="flex items-center gap-2.5">
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span className={`h-2.5 w-2.5 rounded-full ${p.arquivo_storage_path ? "bg-green-500" : "bg-red-500"}`} />
+                                <span className="text-[9px] text-muted-foreground leading-none">PC</span>
+                              </div>
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span className={`h-2.5 w-2.5 rounded-full ${
+                                  ((p.etapa1_resultado as unknown as {has_negativacoes?: boolean})?.has_negativacoes ||
+                                   ((p.etapa1_resultado as unknown as {negat_valor_total?: number})?.negat_valor_total ?? 0) > 0)
+                                    ? "bg-green-500" : "bg-red-500"
+                                }`} />
+                                <span className="text-[9px] text-muted-foreground leading-none">Negat</span>
+                              </div>
+                            </div>
                           ) : (
                             <Badge variant="secondary">Pendente</Badge>
                           )}
@@ -418,13 +441,23 @@ function DivisaoPage() {
                             <Link to="/rateios/$id" params={{ id: p.rateio_id }}>
                               <Badge variant="outline">Ver distribuição</Badge>
                             </Link>
-                          ) : p.etapa1_status === "concluida" ? (
-                            <Link to="/rateios">
-                              <Badge variant="outline" className="text-primary border-primary">
-                                Aguardando Financeiro
+                          ) : p.etapa1_status === "concluida" ? (() => {
+                            const hasNegat =
+                              ((p.etapa1_resultado as unknown as {has_negativacoes?: boolean})?.has_negativacoes) ||
+                              (((p.etapa1_resultado as unknown as {negat_valor_total?: number})?.negat_valor_total) ?? 0) > 0;
+                            const bothGreen = !!p.arquivo_storage_path && hasNegat;
+                            return bothGreen ? (
+                              <Link to="/rateios">
+                                <Badge variant="outline" className="text-primary border-primary">
+                                  Aguardando Financeiro
+                                </Badge>
+                              </Link>
+                            ) : (
+                              <Badge variant="outline" className="text-amber-600 border-amber-400">
+                                Faltando NF Negativações
                               </Badge>
-                            </Link>
-                          ) : (
+                            );
+                          })() : (
                             <span className="text-xs text-muted-foreground">—</span>
                           )}
                         </TableCell>
@@ -447,13 +480,14 @@ function DivisaoPage() {
                           <TableCell colSpan={5} className="p-0">
                             <div className="px-6 py-4 space-y-3">
                               {/* Totais do grupo */}
-                              <div className="grid grid-cols-5 gap-2">
+                              <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
                                 {([
                                   ["Consumo Mínimo", res.grupo.consumo_minimo],
                                   ["PC Fixo",        res.grupo.pc_fixo],
                                   ["PC Adicional",   res.grupo.pc_adicional],
                                   ["F&I",            res.grupo.fi],
                                   ["ADM Avulsas",    res.grupo.adm],
+                                  ["NF Negativações",(res as unknown as {grupo: {negat?: number}}).grupo.negat ?? 0],
                                 ] as [string, number][]).map(([label, val]) => (
                                   <div key={label} className="rounded border bg-background p-2.5">
                                     <p className="text-[10px] text-muted-foreground">{label}</p>
@@ -463,50 +497,77 @@ function DivisaoPage() {
                               </div>
 
                               {/* Tabela por segmento */}
-                              <Table>
-                                <TableHeader>
-                                  <TableRow className="text-xs">
-                                    <TableHead>Segmento</TableHead>
-                                    <TableHead className="text-right">Cons. Mín.</TableHead>
-                                    <TableHead className="text-right">PC Fixo</TableHead>
-                                    <TableHead className="text-right">PC Adicional</TableHead>
-                                    <TableHead className="text-right">F&I</TableHead>
-                                    <TableHead className="text-right">ADM</TableHead>
-                                    <TableHead className="text-right font-bold">Total</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {(Object.entries(res.segmentos) as [string, import("@/lib/compute-segmentos").SegmentoValores | undefined][])
-                                    .sort(([a], [b]) => a.localeCompare(b))
-                                    .map(([seg, v]) => {
-                                      if (!v) return null;
-                                      return (
-                                        <TableRow key={seg} className="text-xs">
-                                          <TableCell className="font-medium py-1.5">
-                                            {SEG_LABELS[seg] ?? seg}
-                                          </TableCell>
-                                          <TableCell className="text-right py-1.5">{brl(v.consumo_minimo)}</TableCell>
-                                          <TableCell className="text-right py-1.5">{brl(v.pc_fixo)}</TableCell>
-                                          <TableCell className="text-right py-1.5">{brl(v.pc_adicional)}</TableCell>
-                                          <TableCell className="text-right py-1.5">{brl(v.fi_novos + v.fi_seminovos)}</TableCell>
-                                          <TableCell className="text-right py-1.5">{brl(v.adm)}</TableCell>
-                                          <TableCell className="text-right py-1.5 font-semibold">{brl(v.total)}</TableCell>
-                                        </TableRow>
-                                      );
-                                    })}
-                                </TableBody>
-                                <TableFooter>
-                                  <TableRow className="text-xs">
-                                    <TableCell className="font-bold py-1.5">TOTAL</TableCell>
-                                    <TableCell className="text-right py-1.5">{brl(res.grupo.consumo_minimo)}</TableCell>
-                                    <TableCell className="text-right py-1.5">{brl(res.grupo.pc_fixo)}</TableCell>
-                                    <TableCell className="text-right py-1.5">{brl(res.grupo.pc_adicional)}</TableCell>
-                                    <TableCell className="text-right py-1.5">{brl(res.grupo.fi)}</TableCell>
-                                    <TableCell className="text-right py-1.5">{brl(res.grupo.adm)}</TableCell>
-                                    <TableCell className="text-right py-1.5 font-bold">{brl(res.grupo.total)}</TableCell>
-                                  </TableRow>
-                                </TableFooter>
-                              </Table>
+                              {(() => {
+                                const resEx = res as unknown as {
+                                  grupo: typeof res.grupo & { negat?: number };
+                                  segmentos: Record<string, (typeof res.segmentos)[keyof typeof res.segmentos] & { negat?: number }>;
+                                };
+                                const totalNFPc = res.grupo.total - (resEx.grupo.negat ?? 0);
+                                const totalNegat = resEx.grupo.negat ?? 0;
+                                return (
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow className="text-xs">
+                                        <TableHead>Segmento</TableHead>
+                                        <TableHead className="text-right">Cons. Mín.</TableHead>
+                                        <TableHead className="text-right">PC Fixo</TableHead>
+                                        <TableHead className="text-right">PC Adicional</TableHead>
+                                        <TableHead className="text-right">F&I</TableHead>
+                                        <TableHead className="text-right">ADM</TableHead>
+                                        <TableHead className="text-right">NF Negat.</TableHead>
+                                        <TableHead className="text-right font-bold">Total</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {(Object.entries(resEx.segmentos) as [string, import("@/lib/compute-segmentos").SegmentoValores & { negat?: number } | undefined][])
+                                        .sort(([a], [b]) => a.localeCompare(b))
+                                        .map(([seg, v]) => {
+                                          if (!v) return null;
+                                          return (
+                                            <TableRow key={seg} className="text-xs">
+                                              <TableCell className="font-medium py-1.5">{SEG_LABELS[seg] ?? seg}</TableCell>
+                                              <TableCell className="text-right py-1.5">{brl(v.consumo_minimo)}</TableCell>
+                                              <TableCell className="text-right py-1.5">{brl(v.pc_fixo)}</TableCell>
+                                              <TableCell className="text-right py-1.5">{brl(v.pc_adicional)}</TableCell>
+                                              <TableCell className="text-right py-1.5">{brl(v.fi_novos + v.fi_seminovos)}</TableCell>
+                                              <TableCell className="text-right py-1.5">{brl(v.adm)}</TableCell>
+                                              <TableCell className="text-right py-1.5">{brl(v.negat ?? 0)}</TableCell>
+                                              <TableCell className="text-right py-1.5 font-semibold">{brl(v.total)}</TableCell>
+                                            </TableRow>
+                                          );
+                                        })}
+                                    </TableBody>
+                                    <TableFooter>
+                                      <TableRow className="text-xs">
+                                        <TableCell className="font-bold py-1.5 text-muted-foreground">Total NF Power Curve</TableCell>
+                                        <TableCell className="text-right py-1.5">{brl(res.grupo.consumo_minimo)}</TableCell>
+                                        <TableCell className="text-right py-1.5">{brl(res.grupo.pc_fixo)}</TableCell>
+                                        <TableCell className="text-right py-1.5">{brl(res.grupo.pc_adicional)}</TableCell>
+                                        <TableCell className="text-right py-1.5">{brl(res.grupo.fi)}</TableCell>
+                                        <TableCell className="text-right py-1.5">{brl(res.grupo.adm)}</TableCell>
+                                        <TableCell className="text-right py-1.5">—</TableCell>
+                                        <TableCell className="text-right py-1.5 font-semibold">{brl(totalNFPc)}</TableCell>
+                                      </TableRow>
+                                      <TableRow className="text-xs">
+                                        <TableCell className="font-bold py-1.5 text-muted-foreground">NF Negativações</TableCell>
+                                        <TableCell colSpan={5} />
+                                        <TableCell className="text-right py-1.5">{brl(totalNegat)}</TableCell>
+                                        <TableCell className="text-right py-1.5 font-semibold">{brl(totalNegat)}</TableCell>
+                                      </TableRow>
+                                      <TableRow className="text-xs">
+                                        <TableCell className="font-bold py-1.5">Total Geral</TableCell>
+                                        <TableCell className="text-right py-1.5">{brl(res.grupo.consumo_minimo)}</TableCell>
+                                        <TableCell className="text-right py-1.5">{brl(res.grupo.pc_fixo)}</TableCell>
+                                        <TableCell className="text-right py-1.5">{brl(res.grupo.pc_adicional)}</TableCell>
+                                        <TableCell className="text-right py-1.5">{brl(res.grupo.fi)}</TableCell>
+                                        <TableCell className="text-right py-1.5">{brl(res.grupo.adm)}</TableCell>
+                                        <TableCell className="text-right py-1.5">{brl(totalNegat)}</TableCell>
+                                        <TableCell className="text-right py-1.5 font-bold">{brl(res.grupo.total)}</TableCell>
+                                      </TableRow>
+                                    </TableFooter>
+                                  </Table>
+                                );
+                              })()}
 
                               {/* Percentuais usados */}
                               <p className="text-[10px] text-muted-foreground">
@@ -598,6 +659,30 @@ function DivisaoPage() {
             />
           </div>
 
+          {/* Valor NF Negativações */}
+          <div className="space-y-1.5">
+            <Label>Valor NF Negativações (R$) <span className="text-muted-foreground font-normal text-xs">— deixe 0 se não houver</span></Label>
+            <Input
+              type="number"
+              min={0}
+              step={0.01}
+              value={negatValorTotal || ""}
+              placeholder="0,00"
+              onChange={(e) => setNegatValorTotal(Math.max(0, parseFloat(e.target.value) || 0))}
+              className="max-w-xs"
+            />
+            {parsed?.hasNegativacoes && (
+              <p className="text-xs text-green-700 font-medium">
+                ✓ Aba de Negativações detectada na planilha — {parsed.negativacoesPorCnpj.size} CNPJs com registros.
+              </p>
+            )}
+            {parsed && !parsed.hasNegativacoes && (
+              <p className="text-xs text-muted-foreground">
+                Nenhuma aba com coluna DOCUMENTO CREDOR detectada na planilha.
+              </p>
+            )}
+          </div>
+
           <Button onClick={handleParse} disabled={!file || parsing} className="w-full">
             {parsing ? "Processando…" : "Processar arquivo"}
           </Button>
@@ -613,13 +698,14 @@ function DivisaoPage() {
               <CardDescription>Totais da fatura Serasa antes da divisão</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-5 gap-3">
+              <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
                 {[
                   ["Consumo Mínimo", summary.grupo.consumo_minimo],
                   ["PC Fixo",        summary.grupo.pc_fixo],
                   ["PC Adicional",   summary.grupo.pc_adicional],
                   ["F&I",            summary.grupo.fi],
                   ["ADM Avulsas",    summary.grupo.adm],
+                  ["NF Negativações",summary.grupo.negat],
                 ].map(([label, val]) => (
                   <div key={label as string} className="rounded-lg border p-3">
                     <p className="text-xs text-muted-foreground">{label as string}</p>
@@ -636,6 +722,7 @@ function DivisaoPage() {
               <CardDescription>
                 Consumo Mínimo e PC Fixo distribuídos pelo nº de CNPJs de cada segmento.
                 PC Adicional pela proporção PCV. F&I pela proporção Intranet. ADM direto do Demonstrativo.
+                NF Negativações pela regra do PC Fixo (sem Serviços).
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -648,6 +735,7 @@ function DivisaoPage() {
                     <TableHead className="text-right">PC Adicional</TableHead>
                     <TableHead className="text-right">F&I</TableHead>
                     <TableHead className="text-right">ADM Avulsas</TableHead>
+                    <TableHead className="text-right">NF Negat.</TableHead>
                     <TableHead className="text-right font-bold">Total</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -668,6 +756,7 @@ function DivisaoPage() {
                             {brl(v.fi_novos + v.fi_seminovos)}
                           </TableCell>
                           <TableCell className="text-right text-sm">{brl(v.adm)}</TableCell>
+                          <TableCell className="text-right text-sm">{brl(v.negat)}</TableCell>
                           <TableCell className="text-right font-semibold">{brl(v.total)}</TableCell>
                         </TableRow>
                       );
@@ -675,12 +764,29 @@ function DivisaoPage() {
                 </TableBody>
                 <TableFooter>
                   <TableRow>
-                    <TableCell className="font-bold">TOTAL</TableCell>
+                    <TableCell className="font-bold text-muted-foreground">Total NF Power Curve</TableCell>
                     <TableCell className="text-right">{brl(summary.grupo.consumo_minimo)}</TableCell>
                     <TableCell className="text-right">{brl(summary.grupo.pc_fixo)}</TableCell>
                     <TableCell className="text-right">{brl(summary.grupo.pc_adicional)}</TableCell>
                     <TableCell className="text-right">{brl(summary.grupo.fi)}</TableCell>
                     <TableCell className="text-right">{brl(summary.grupo.adm)}</TableCell>
+                    <TableCell className="text-right">—</TableCell>
+                    <TableCell className="text-right font-semibold">{brl(summary.grupo.total - summary.grupo.negat)}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-bold text-muted-foreground">NF Negativações</TableCell>
+                    <TableCell colSpan={5} />
+                    <TableCell className="text-right">{brl(summary.grupo.negat)}</TableCell>
+                    <TableCell className="text-right font-semibold">{brl(summary.grupo.negat)}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-bold">Total Geral</TableCell>
+                    <TableCell className="text-right">{brl(summary.grupo.consumo_minimo)}</TableCell>
+                    <TableCell className="text-right">{brl(summary.grupo.pc_fixo)}</TableCell>
+                    <TableCell className="text-right">{brl(summary.grupo.pc_adicional)}</TableCell>
+                    <TableCell className="text-right">{brl(summary.grupo.fi)}</TableCell>
+                    <TableCell className="text-right">{brl(summary.grupo.adm)}</TableCell>
+                    <TableCell className="text-right">{brl(summary.grupo.negat)}</TableCell>
                     <TableCell className="text-right font-bold">{brl(summary.grupo.total)}</TableCell>
                   </TableRow>
                 </TableFooter>
@@ -691,7 +797,7 @@ function DivisaoPage() {
           <div className="flex justify-end gap-3">
             <Button
               variant="outline"
-              onClick={() => { setParsed(null); setSummary(null); setFile(null); if (fileRef.current) fileRef.current.value = ""; }}
+              onClick={() => { setParsed(null); setSummary(null); setFile(null); setNegatValorTotal(0); if (fileRef.current) fileRef.current.value = ""; }}
             >
               Recomeçar
             </Button>
@@ -760,6 +866,12 @@ function DivisaoPage() {
                         value:    admDialogTotal,
                         method:   "Demonstrativo Serasa (por gestor/segmento)",
                         tableKey: "GESTORES_ADM" as const,
+                      },
+                      {
+                        label:    "NF Negativações",
+                        value:    negatValorTotal,
+                        method:   "Proporcional ao nº de CNPJs — regra do PC Fixo, sem Serviços",
+                        tableKey: null,
                       },
                     ] as { label: string; value: number; method: string; tableKey: "MONITORAMENTO" | "PC_FIXO" | "PCV_USUARIOS" | "GESTORES_ADM" | null }[]
                   ).map(({ label, value, method, tableKey }) => (

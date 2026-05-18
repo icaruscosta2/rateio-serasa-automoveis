@@ -46,6 +46,7 @@ interface RateioMeta {
   pc_adicional_grupo: number;
   fi_intranet_grupo: number;
   adm_rateado_grupo: number;
+  parse_summary: Record<string, unknown> | null;
 }
 
 function RateioDetailPage() {
@@ -86,19 +87,42 @@ function RateioDetailPage() {
     { consumo_minimo: 0, pc_fixo: 0, pc_adicional: 0, fi_novos: 0, fi_seminovos: 0, adm_rateado: 0, total: 0 },
   );
 
+  // Negat: recalcular por empresa a partir do parse_summary (sem precisar de coluna no banco)
+  const negatByCompany = (() => {
+    if (!meta?.parse_summary) return new Map<number, number>();
+    const ps = meta.parse_summary;
+    const negatValorAuto = Number(ps.negatValorAuto ?? 0);
+    const negativacoesPorCnpj = ps.negativacoesPorCnpj as Record<string, number> | undefined;
+    if (!negatValorAuto || !negativacoesPorCnpj) return new Map<number, number>();
+    const totalNegat = Object.values(negativacoesPorCnpj).reduce((a, b) => a + b, 0);
+    if (totalNegat === 0) return new Map<number, number>();
+    const map = new Map<number, number>();
+    for (const r of rows) {
+      const cnpj = r.companies?.cnpj_normalizado ?? "";
+      const count = negativacoesPorCnpj[cnpj] ?? 0;
+      if (count > 0) map.set(r.cod_empresa, (negatValorAuto * count) / totalNegat);
+    }
+    return map;
+  })();
+  const negatTotal = Array.from(negatByCompany.values()).reduce((a, b) => a + b, 0);
+
   const exportXlsx = () => {
     try {
-      const data = rows.map((r) => ({
-        CNPJ: r.companies?.cnpj ?? formatCnpj(r.companies?.cnpj_normalizado ?? ""),
-        Empresa: r.companies?.nome ?? "",
-        "Consumo Mínimo": Number(r.consumo_minimo),
-        "PC Fixo": Number(r.pc_fixo),
-        "PC Adicional": Number(r.pc_adicional),
-        "F&I Novos": Number(r.fi_novos),
-        "F&I Seminovos": Number(r.fi_seminovos),
-        "Consultas ADM Avulsas": Number(r.adm_rateado),
-        Total: Number(r.total),
-      }));
+      const data = rows.map((r) => {
+        const negat = negatByCompany.get(r.cod_empresa) ?? 0;
+        return {
+          CNPJ: r.companies?.cnpj ?? formatCnpj(r.companies?.cnpj_normalizado ?? ""),
+          Empresa: r.companies?.nome ?? "",
+          "Consumo Mínimo": Number(r.consumo_minimo),
+          "PC Fixo": Number(r.pc_fixo),
+          "PC Adicional": Number(r.pc_adicional),
+          "F&I Novos": Number(r.fi_novos),
+          "F&I Seminovos": Number(r.fi_seminovos),
+          "Consultas ADM Avulsas": Number(r.adm_rateado),
+          "NF Negativações": negat,
+          Total: Number(r.total) + negat,
+        };
+      });
       data.push({
         CNPJ: "", Empresa: "TOTAL",
         "Consumo Mínimo": totals.consumo_minimo,
@@ -107,18 +131,19 @@ function RateioDetailPage() {
         "F&I Novos": totals.fi_novos,
         "F&I Seminovos": totals.fi_seminovos,
         "Consultas ADM Avulsas": totals.adm_rateado,
-        Total: totals.total,
+        "NF Negativações": negatTotal,
+        Total: totals.total + negatTotal,
       });
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "RESUMO RATEIO");
 
       // ---- Aba 2: Centros de Custos ----
-      // Regras AUTOMÓVEIS (aplicadas a todas as empresas):
+      // Regras AUTOMÓVEIS:
       //   NOVOS             = Consumo Mínimo + F&I Novos + Consultas ADM Avulsas
       //   SEMINOVOS         = F&I Seminovos
-      //   PEÇAS             = 75% × (PC Fixo + PC Adicional)
-      //   ASSISTÊNCIA TÉC.  = 25% × (PC Fixo + PC Adicional)
+      //   PEÇAS             = 75% × (PC Fixo + PC Adicional + NF Negativações)
+      //   ASSISTÊNCIA TÉC.  = 25% × (PC Fixo + PC Adicional + NF Negativações)
       const ccRows = rows.map((r) => {
         const cm   = Number(r.consumo_minimo);
         const pcf  = Number(r.pc_fixo);
@@ -126,7 +151,8 @@ function RateioDetailPage() {
         const fiN  = Number(r.fi_novos);
         const fiS  = Number(r.fi_seminovos);
         const adm  = Number(r.adm_rateado);
-        const pcBase = pcf + pca;
+        const ngt  = negatByCompany.get(r.cod_empresa) ?? 0;
+        const pcBase = pcf + pca + ngt;
         const novos    = cm + fiN + adm;
         const seminovos = fiS;
         const pecas    = 0.75 * pcBase;
@@ -190,13 +216,14 @@ function RateioDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
         {[
           ["Consumo Mín.", totals.consumo_minimo],
           ["PC Fixo", totals.pc_fixo],
           ["PC Adicional", totals.pc_adicional],
           ["F&I (PEFIN PF/PJ)", totals.fi_novos + totals.fi_seminovos],
           ["Consultas ADM Avulsas", totals.adm_rateado],
+          ["NF Negativações", negatTotal],
         ].map(([label, v]) => (
           <Card key={label as string}>
             <CardHeader className="pb-2">
@@ -215,47 +242,55 @@ function RateioDetailPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead rowSpan={2}>CNPJ</TableHead>
                 <TableHead rowSpan={2}>Empresa</TableHead>
                 <TableHead rowSpan={2} className="text-right">Consumo Mín.</TableHead>
                 <TableHead rowSpan={2} className="text-right">PC Fixo</TableHead>
                 <TableHead rowSpan={2} className="text-right">PC Adicional</TableHead>
                 <TableHead colSpan={3} className="text-center border-l">F&I</TableHead>
-                <TableHead rowSpan={2} className="text-right border-l">Total</TableHead>
+                <TableHead rowSpan={2} className="text-right border-l">NF Negat.</TableHead>
+                <TableHead rowSpan={2} className="text-right border-l font-bold">Total</TableHead>
               </TableRow>
               <TableRow>
                 <TableHead className="text-right border-l">Novos</TableHead>
                 <TableHead className="text-right">Seminovos</TableHead>
-                <TableHead className="text-right">Consultas ADM Avulsas</TableHead>
+                <TableHead className="text-right">Consultas ADM</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((r) => (
-                <TableRow key={r.cod_empresa}>
-                  <TableCell className="font-mono text-xs">
-                    {r.companies?.cnpj ?? formatCnpj(r.companies?.cnpj_normalizado ?? "")}
-                  </TableCell>
-                  <TableCell>{r.companies?.nome}</TableCell>
-                  <TableCell className="text-right">{brl(Number(r.consumo_minimo))}</TableCell>
-                  <TableCell className="text-right">{brl(Number(r.pc_fixo))}</TableCell>
-                  <TableCell className="text-right">{brl(Number(r.pc_adicional))}</TableCell>
-                  <TableCell className="text-right border-l">{brl(Number(r.fi_novos))}</TableCell>
-                  <TableCell className="text-right">{brl(Number(r.fi_seminovos))}</TableCell>
-                  <TableCell className="text-right">{brl(Number(r.adm_rateado))}</TableCell>
-                  <TableCell className="text-right border-l font-medium">{brl(Number(r.total))}</TableCell>
-                </TableRow>
-              ))}
+              {rows.map((r) => {
+                const negat = negatByCompany.get(r.cod_empresa) ?? 0;
+                const totalComNegat = Number(r.total) + negat;
+                return (
+                  <TableRow key={r.cod_empresa}>
+                    <TableCell>
+                      <div>{r.companies?.nome}</div>
+                      <div className="text-xs text-muted-foreground font-mono">
+                        {r.companies?.cnpj ?? formatCnpj(r.companies?.cnpj_normalizado ?? "")}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">{brl(Number(r.consumo_minimo))}</TableCell>
+                    <TableCell className="text-right">{brl(Number(r.pc_fixo))}</TableCell>
+                    <TableCell className="text-right">{brl(Number(r.pc_adicional))}</TableCell>
+                    <TableCell className="text-right border-l">{brl(Number(r.fi_novos))}</TableCell>
+                    <TableCell className="text-right">{brl(Number(r.fi_seminovos))}</TableCell>
+                    <TableCell className="text-right">{brl(Number(r.adm_rateado))}</TableCell>
+                    <TableCell className="text-right border-l">{negat > 0 ? brl(negat) : "—"}</TableCell>
+                    <TableCell className="text-right border-l font-medium">{brl(totalComNegat)}</TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
             <TableFooter>
               <TableRow>
-                <TableCell colSpan={2}>TOTAL</TableCell>
+                <TableCell>TOTAL</TableCell>
                 <TableCell className="text-right">{brl(totals.consumo_minimo)}</TableCell>
                 <TableCell className="text-right">{brl(totals.pc_fixo)}</TableCell>
                 <TableCell className="text-right">{brl(totals.pc_adicional)}</TableCell>
                 <TableCell className="text-right border-l">{brl(totals.fi_novos)}</TableCell>
                 <TableCell className="text-right">{brl(totals.fi_seminovos)}</TableCell>
                 <TableCell className="text-right">{brl(totals.adm_rateado)}</TableCell>
-                <TableCell className="text-right border-l">{brl(totals.total)}</TableCell>
+                <TableCell className="text-right border-l">{brl(negatTotal)}</TableCell>
+                <TableCell className="text-right border-l font-bold">{brl(totals.total + negatTotal)}</TableCell>
               </TableRow>
             </TableFooter>
           </Table>

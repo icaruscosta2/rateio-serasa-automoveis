@@ -23,6 +23,8 @@ export interface RateioInput {
   };
   /** Método de distribuição do Consumo Mínimo. Default: "matrizes" */
   consumoMinimoMethod?: ConsumoMinimoMethod;
+  /** Valor da NF Negativações destinado ao segmento Automóveis (já calculado na Etapa 1). */
+  negatValorAuto?: number;
 }
 
 export interface RateioRow {
@@ -35,12 +37,14 @@ export interface RateioRow {
   qtdIntranet: number;
   qtdPcSegmento: number;
   qtdUnicoAuto: number;
+  qtdNegativacoes: number;
   consumoMinimo: number;
   pcFixo: number;
   pcAdicional: number;
   fiNovos: number;
   fiSeminovos: number;
   admRateado: number;
+  negatRateado: number;
   total: number;
 }
 
@@ -53,6 +57,7 @@ export interface RateioOutput {
     pcAdicional: number;
     fi: number;
     adm: number;
+    negat: number;
   };
   // Diagnóstico: fatia F&I por segmento e a proporção Intranet usada.
   fiPorSegmento: Record<string, number>;
@@ -61,7 +66,7 @@ export interface RateioOutput {
   pcvShareAuto: number; // ex.: 250/476
 }
 
-export function computeRateio({ parsed, empresas, pct, consumoMinimoMethod = "matrizes" }: RateioInput): RateioOutput {
+export function computeRateio({ parsed, empresas, pct, consumoMinimoMethod = "matrizes", negatValorAuto = 0 }: RateioInput): RateioOutput {
   const incluidas = empresas.filter((e) => e.incluida);
   const matrizes = incluidas.filter((e) => e.is_matriz);
 
@@ -84,6 +89,8 @@ export function computeRateio({ parsed, empresas, pct, consumoMinimoMethod = "ma
     // Consultas ADM Avulsas (Rejane + Márcia) vai 100% para Automóveis.
     // Usa apenas a fatia do segmento AUTOMOVEIS para não incluir gestores de outros segmentos.
     adm: parsed.admRateadoPorSegmento?.["AUTOMOVEIS"] ?? parsed.admRateadoGrupo,
+    // NF Negativações — valor já calculado para o segmento Automóveis na Etapa 1.
+    negat: negatValorAuto,
   };
 
   // Segmento de cada empresa pela BANDEIRA (null = excluída/desconhecida).
@@ -200,6 +207,17 @@ export function computeRateio({ parsed, empresas, pct, consumoMinimoMethod = "ma
   // Não há fallback para Intranet — se Único Auto estiver zerado, nenhuma empresa recebe.
   const totalPcAdicionalBase = totalUnicoAutoUniverso;
 
+  // NF Negativações: distribuição proporcional ao nº de negativações por CNPJ (DOCUMENTO CREDOR).
+  // Universo: todas as empresas AUTOMOVEIS com bandeira mapeada.
+  let totalNegatUniverso = 0;
+  for (const e of empresas) {
+    const seg = segmentoDaBandeira(e.bandeira);
+    if (seg !== "AUTOMOVEIS") continue;
+    const c = e.cnpj_normalizado;
+    if (!c || ownerByCnpjAll.get(c) !== e.cod_empresa) continue;
+    totalNegatUniverso += parsed.negativacoesPorCnpj?.get(c) ?? 0;
+  }
+
   // Consultas ADM Avulsas: distribuição igual entre todas as empresas AUTOMOVEIS incluídas
   // (mesma regra do PC Fixo, mas restrita ao segmento Automóveis).
   const autoIncluidas = incluidas.filter(
@@ -212,6 +230,12 @@ export function computeRateio({ parsed, empresas, pct, consumoMinimoMethod = "ma
     const qSemi = qtd(parsed.intranetSeminovosPorCnpj, e);
     const qIntra = qtd(parsed.intranetPorCnpj, e);
     const qUnico = qtd(parsed.unicoAutoPorCnpj, e);
+    const qNegat = (() => {
+      const c = e.cnpj_normalizado;
+      if (!c) return 0;
+      if (ownerByCnpj.get(c) !== e.cod_empresa) return 0;
+      return parsed.negativacoesPorCnpj?.get(c) ?? 0;
+    })();
     // qPcv: PCV não é base de distribuição (CNPJ é do cliente). Sempre 0.
 
     const consumoMinimo = (() => {
@@ -245,7 +269,14 @@ export function computeRateio({ parsed, empresas, pct, consumoMinimoMethod = "ma
       admRateado = fatia.adm / autoIncluidas.length;
     }
 
-    const total = consumoMinimo + pcFixo + pcAdicional + fiNovos + fiSeminovos + admRateado;
+    // NF Negativações: proporcional ao nº de negativações por CNPJ (DOCUMENTO CREDOR).
+    // Só Automóveis recebe; se não há registros de negat, nenhuma empresa recebe.
+    let negatRateado = 0;
+    if (seg === "AUTOMOVEIS" && totalNegatUniverso > 0 && fatia.negat > 0) {
+      negatRateado = (fatia.negat * qNegat) / totalNegatUniverso;
+    }
+
+    const total = consumoMinimo + pcFixo + pcAdicional + fiNovos + fiSeminovos + admRateado + negatRateado;
     return {
       cod_empresa: e.cod_empresa,
       nome: e.nome,
@@ -256,12 +287,14 @@ export function computeRateio({ parsed, empresas, pct, consumoMinimoMethod = "ma
       qtdIntranet: qIntra,
       qtdPcSegmento: 0,
       qtdUnicoAuto: qUnico,
+      qtdNegativacoes: qNegat,
       consumoMinimo,
       pcFixo,
       pcAdicional,
       fiNovos,
       fiSeminovos,
       admRateado,
+      negatRateado,
       total,
     };
   });
@@ -273,18 +306,21 @@ export function computeRateio({ parsed, empresas, pct, consumoMinimoMethod = "ma
       qtdIntranet: acc.qtdIntranet + r.qtdIntranet,
       qtdPcSegmento: acc.qtdPcSegmento + r.qtdPcSegmento,
       qtdUnicoAuto: acc.qtdUnicoAuto + r.qtdUnicoAuto,
+      qtdNegativacoes: acc.qtdNegativacoes + r.qtdNegativacoes,
       consumoMinimo: acc.consumoMinimo + r.consumoMinimo,
       pcFixo: acc.pcFixo + r.pcFixo,
       pcAdicional: acc.pcAdicional + r.pcAdicional,
       fiNovos: acc.fiNovos + r.fiNovos,
       fiSeminovos: acc.fiSeminovos + r.fiSeminovos,
       admRateado: acc.admRateado + r.admRateado,
+      negatRateado: acc.negatRateado + r.negatRateado,
       total: acc.total + r.total,
     }),
     {
       qtdNovos: 0, qtdSeminovos: 0, qtdIntranet: 0, qtdPcSegmento: 0, qtdUnicoAuto: 0,
+      qtdNegativacoes: 0,
       consumoMinimo: 0, pcFixo: 0, pcAdicional: 0, fiNovos: 0, fiSeminovos: 0,
-      admRateado: 0, total: 0,
+      admRateado: 0, negatRateado: 0, total: 0,
     },
   );
 
@@ -296,7 +332,7 @@ export function computeRateio({ parsed, empresas, pct, consumoMinimoMethod = "ma
   return {
     rows,
     totals,
-    fatiaAuto: fatia,
+    fatiaAuto: { ...fatia },
     fiPorSegmento,
     intranetUniversoPorSegmento,
     intranetUniversoTotal: intranetUniverso,

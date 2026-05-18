@@ -70,6 +70,8 @@ function NovoRateioPage() {
   const [consumoMinimoMethod, setConsumoMinimoMethod] = useState<ConsumoMinimoMethod>("matrizes");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  /** Valor da NF Negativações para Automóveis, lido do etapa1_resultado */
+  const [negatValorAuto, setNegatValorAuto] = useState<number>(0);
 
   // Auto-carga da planilha salva na Etapa 1
   const [loadingFromStorage, setLoadingFromStorage] = useState(false);
@@ -146,11 +148,17 @@ function NovoRateioPage() {
     setLoadingFromStorage(true);
     supabase
       .from("processos_serasa")
-      .select("mes_referencia, arquivo_storage_path")
+      .select("mes_referencia, arquivo_storage_path, etapa1_resultado")
       .eq("id", processoId)
       .single()
       .then(async ({ data }) => {
         if (data?.mes_referencia) setMes(data.mes_referencia.slice(0, 7));
+        // Extrai valor da NF Negativações para Automóveis do resultado salvo
+        if (data?.etapa1_resultado) {
+          const res = data.etapa1_resultado as Record<string, unknown>;
+          const negatPorSeg = res["negat_por_segmento"] as Record<string, number> | undefined;
+          setNegatValorAuto(negatPorSeg?.["AUTOMOVEIS"] ?? 0);
+        }
         if (!data?.arquivo_storage_path) { setLoadingFromStorage(false); return; }
         const { data: blob, error } = await supabase.storage
           .from("rateio-uploads")
@@ -333,8 +341,9 @@ function NovoRateioPage() {
       })),
       pct,
       consumoMinimoMethod,
+      negatValorAuto,
     });
-  }, [parsed, companies, sel, pct, consumoMinimoMethod]);
+  }, [parsed, companies, sel, pct, consumoMinimoMethod, negatValorAuto]);
 
   const handleSave = async () => {
     if (!parsed || !preview) return;
@@ -377,6 +386,10 @@ function NovoRateioPage() {
             demoFiPefinPj: parsed.demoFiPefinPj,
             abasEncontradas: parsed.abasEncontradas,
             warnings: parsed.warnings,
+            // NF Negativações: armazena os dados necessários para recalcular por empresa na tela de resultado
+            negatValorAuto,
+            hasNegativacoes: parsed.hasNegativacoes,
+            negativacoesPorCnpj: Object.fromEntries(parsed.negativacoesPorCnpj ?? []),
           },
         })
         .select()
@@ -590,6 +603,11 @@ function NovoRateioPage() {
                   {parsed.pcVariavelTotalLinhas > 0
                     ? ` (${((parsed.pcVariavelLinhasAuto / parsed.pcVariavelTotalLinhas) * 100).toFixed(2)}%)`
                     : ""}
+                </div>
+                <div className={`text-xs font-medium ${parsed.hasNegativacoes ? "text-green-700" : "text-muted-foreground"}`}>
+                  NF Negativações: {parsed.hasNegativacoes
+                    ? `✓ detectada — ${parsed.negativacoesPorCnpj.size} CNPJs · valor Auto: ${brl(negatValorAuto)}`
+                    : "não detectada na planilha"}
                 </div>
                 {parsed.warnings.length > 0 && (
                   <ul className="text-xs text-amber-700 list-disc pl-5">
@@ -976,6 +994,26 @@ function NovoRateioPage() {
                 ) : (
                   <p className="text-[11px] text-muted-foreground italic mt-0.5">
                     Nenhum gestor ADM identificado para Automóveis nesta planilha.
+                  </p>
+                )}
+              </div>
+
+              {/* NF Negativações */}
+              <div className="rounded-md border p-3.5 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-sm">NF Negativações</span>
+                  <span className="text-sm font-semibold tabular-nums">{brl(preview.fatiaAuto.negat)}</span>
+                </div>
+                {preview.fatiaAuto.negat > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Proporcional ao nº de registros DOCUMENTO CREDOR —{" "}
+                    {preview.totals.qtdNegativacoes} negativações entre as lojas incluídas
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">
+                    {parsed.hasNegativacoes
+                      ? "Detectado na planilha, mas valor Auto é R$ 0,00 (verifique a Etapa 1)."
+                      : "Não detectado nesta planilha (coluna DOCUMENTO CREDOR ausente)."}
                   </p>
                 )}
               </div>

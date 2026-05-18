@@ -45,6 +45,10 @@ export interface ParseResult {
   admLogonsDesconhecidos: string[];
   /** Gestores ADM identificados por segmento, com valor individual (para exibição no popup) */
   admLogonsPorSegmento: Record<string, Array<{ logon: string; soma: number }>>;
+  /** Negativações: contagem de registros por CNPJ do concessionário (coluna DOCUMENTO CREDOR) */
+  negativacoesPorCnpj: Map<string, number>;
+  /** true se a aba de Negativações foi detectada (coluna DOCUMENTO CREDOR presente) */
+  hasNegativacoes: boolean;
   // Diagnóstico
   abasEncontradas: string[];
   abasFaltando: string[];
@@ -201,6 +205,8 @@ export function parseRateioWorkbook(
     pcvUsuariosDesconhecidos: [],
     admLogonsDesconhecidos: [],
     admLogonsPorSegmento: {},
+    negativacoesPorCnpj: new Map(),
+    hasNegativacoes: false,
     abasEncontradas: wb.SheetNames,
     abasFaltando: [],
     warnings: [],
@@ -528,6 +534,24 @@ export function parseRateioWorkbook(
       );
     }
   }
+
+  // ============= Negativações (DOCUMENTO CREDOR) =============
+  // Procura em todas as abas a coluna "DOCUMENTO CREDOR" (CNPJ do concessionário).
+  // A primeira aba que contenha essa coluna é usada.
+  for (const sheetName of wb.SheetNames) {
+    const rows = sheetToRowsByHeader(wb.Sheets[sheetName], ["DOCUMENTO CREDOR"]);
+    if (rows.length > 0) {
+      for (const r of rows) {
+        const cnpjRaw = String(get(r, "DOCUMENTO CREDOR") ?? "");
+        const cnpj = normalizeCnpj(cnpjRaw);
+        if (cnpj) {
+          result.negativacoesPorCnpj.set(cnpj, (result.negativacoesPorCnpj.get(cnpj) ?? 0) + 1);
+        }
+      }
+      break; // usa apenas a primeira aba com essa coluna
+    }
+  }
+  result.hasNegativacoes = result.negativacoesPorCnpj.size > 0;
 
   return result;
 }

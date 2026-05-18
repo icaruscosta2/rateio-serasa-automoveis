@@ -26,6 +26,7 @@ export interface SegmentoValores {
   fi_novos: number;
   fi_seminovos: number;
   adm: number;
+  negat: number;
   total: number;
   /** Bases de cálculo para auditoria */
   intranet_novos: number;
@@ -41,6 +42,7 @@ export interface SegmentSummary {
     pc_adicional: number;
     fi: number;
     adm: number;
+    negat: number;
     total: number;
     intranet_total: number;
   };
@@ -100,6 +102,8 @@ export function computeSegmentos(
   /** Mapa ajustado de linhas PCV por segmento (inclui overrides do Dialog 2).
    *  Se omitido, usa parsed.pcVariavelLinhasPorSegmento. */
   pcvLinhasOverride?: Map<string, number>,
+  /** Valor total da NF Negativações a distribuir entre segmentos (regra PC Fixo, sem SERVICOS). */
+  negatValorTotal?: number,
 ): SegmentSummary {
 
   // 1. Monta mapa CNPJ → segmento (deduplica: prioriza quem tem segmento)
@@ -177,15 +181,30 @@ export function computeSegmentos(
     }
   }
 
-  // 7. ADM — já separado por segmento no parse
+  // 7. Negat — mesma regra do PC Fixo, mas excluindo SERVICOS
+  const negatPerSeg = new Map<string, number>();
+  if (negatValorTotal && negatValorTotal > 0) {
+    const pcfNoServicos = new Map(
+      Array.from(configMaps.pcFixo.entries()).filter(([seg]) => seg !== "SERVICOS"),
+    );
+    const totalCnpjNegat = Array.from(pcfNoServicos.values()).reduce((a, b) => a + b, 0);
+    if (totalCnpjNegat > 0) {
+      for (const [seg, qtd] of pcfNoServicos) {
+        negatPerSeg.set(seg, (negatValorTotal * qtd) / totalCnpjNegat);
+      }
+    }
+  }
+
+  // 8. ADM — já separado por segmento no parse
   const admPorSeg = parsed.admRateadoPorSegmento ?? {};
 
-  // 8. Monta o conjunto de segmentos com dados
+  // 9. Monta o conjunto de segmentos com dados
   const allSegs = new Set<string>([
     ...intranetTotais.keys(),
     ...consMinimoPerSeg.keys(),
     ...pcFixoPerSeg.keys(),
     ...Object.keys(admPorSeg),
+    ...negatPerSeg.keys(),
     "AUTOMOVEIS",
   ]);
 
@@ -197,6 +216,7 @@ export function computeSegmentos(
     const fiN = fiNovosPorSeg.get(seg as Segmento)     ?? 0;
     const fiS = fiSemiPorSeg.get(seg as Segmento)      ?? 0;
     const adm = (admPorSeg[seg] as number) ?? 0;
+    const ngt = negatPerSeg.get(seg) ?? 0;
     segmentos[seg as Segmento] = {
       consumo_minimo:      cm,
       pc_fixo:             pcf,
@@ -204,7 +224,8 @@ export function computeSegmentos(
       fi_novos:            fiN,
       fi_seminovos:        fiS,
       adm,
-      total:               cm + pcf + pca + fiN + fiS + adm,
+      negat:               ngt,
+      total:               cm + pcf + pca + fiN + fiS + adm + ngt,
       intranet_novos:      intranetNovos.get(seg as Segmento)  ?? 0,
       intranet_seminovos:  intranetSemi.get(seg as Segmento)   ?? 0,
       intranet_total:      intranetTotais.get(seg as Segmento) ?? 0,
@@ -213,6 +234,7 @@ export function computeSegmentos(
 
   const admTotal = Object.values(admPorSeg as Record<string, number>)
     .reduce((a, b) => a + b, 0);
+  const negatTotal = Array.from(negatPerSeg.values()).reduce((a, b) => a + b, 0);
 
   // Percentual efetivo da AUTOMÓVEIS (para compatibilidade com histórico no banco)
   const pctConsMin = totalCnpjMon > 0
@@ -229,8 +251,9 @@ export function computeSegmentos(
       pc_adicional:   parsed.pcAdicionalGrupo,
       fi:             parsed.fiGrupo,
       adm:            admTotal,
+      negat:          negatTotal,
       total:          parsed.consumoMinimoGrupo + parsed.pcFixoGrupo +
-                      parsed.pcAdicionalGrupo   + parsed.fiGrupo + admTotal,
+                      parsed.pcAdicionalGrupo   + parsed.fiGrupo + admTotal + negatTotal,
       intranet_total: totalIntranet,
     },
     segmentos,
