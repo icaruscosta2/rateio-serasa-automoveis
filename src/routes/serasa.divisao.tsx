@@ -299,7 +299,7 @@ function DivisaoPage() {
         }
       }
 
-      // Enriquece o resultado com dados de negat antes de salvar
+      // Enriquece o resultado com dados de negat + todos os dados do parse antes de salvar
       const resultadoComNegat = {
         ...summary,
         negat_valor_total: negatValorTotal,
@@ -309,6 +309,38 @@ function DivisaoPage() {
         ),
         // Guarda contagem por CNPJ para que a Etapa 2 distribua sem precisar re-subir o arquivo
         negat_por_cnpj: Object.fromEntries(parsed.negativacoesPorCnpj),
+        // Dados completos do parse para que a Etapa 2 não precise re-baixar nenhum arquivo.
+        // O Financeiro só precisa enviar o arquivo com a aba ÚNICO AUTO.
+        parse_data: {
+          consumoMinimoGrupo:          parsed.consumoMinimoGrupo,
+          pcFixoGrupo:                 parsed.pcFixoGrupo,
+          pcAdicionalGrupo:            parsed.pcAdicionalGrupo,
+          fiGrupo:                     parsed.fiGrupo,
+          admRateadoGrupo:             parsed.admRateadoGrupo,
+          admRateadoPorSegmento:       parsed.admRateadoPorSegmento,
+          admLogonsPorSegmento:        parsed.admLogonsPorSegmento,
+          demoTotalLogonPcCredito:     parsed.demoTotalLogonPcCredito,
+          demoFiPefinPf:               parsed.demoFiPefinPf,
+          demoFiPefinPj:               parsed.demoFiPefinPj,
+          demoOutrosUsuariosNaoSomado: parsed.demoOutrosUsuariosNaoSomado,
+          demoFiPefinPfPorLogon:       parsed.demoFiPefinPfPorLogon,
+          demoFiPefinPjPorLogon:       parsed.demoFiPefinPjPorLogon,
+          intranetPorCnpj:             Object.fromEntries(parsed.intranetPorCnpj),
+          intranetNovosPorCnpj:        Object.fromEntries(parsed.intranetNovosPorCnpj),
+          intranetSeminovosPorCnpj:    Object.fromEntries(parsed.intranetSeminovosPorCnpj),
+          pcVariavelTotalLinhas:       parsed.pcVariavelTotalLinhas,
+          pcVariavelLinhasDiretas:     Object.fromEntries(parsed.pcVariavelLinhasDiretas),
+          pcVariavelLinhasPorSegmento: Object.fromEntries(parsed.pcVariavelLinhasPorSegmento),
+          pcVariavelLinhasAuto:        parsed.pcVariavelLinhasAuto,
+          pcvConsultaPfUsers:          parsed.pcvConsultaPfUsers,
+          pcvUsuariosDesconhecidos:    parsed.pcvUsuariosDesconhecidos,
+          admLogonsDesconhecidos:      parsed.admLogonsDesconhecidos,
+          negativacoesPorCnpj:         Object.fromEntries(parsed.negativacoesPorCnpj),
+          hasNegativacoes:             parsed.hasNegativacoes,
+          abasEncontradas:             parsed.abasEncontradas,
+          abasFaltando:                parsed.abasFaltando,
+          warnings:                    parsed.warnings,
+        },
       };
 
       const { error } = await supabase

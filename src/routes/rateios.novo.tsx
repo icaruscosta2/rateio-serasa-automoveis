@@ -25,6 +25,47 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+// ---------------------------------------------------------------------------
+// Reconstrói um ParseResult a partir do JSON salvo na Etapa 1.
+// O ÚNICO AUTO fica vazio — será preenchido pelo Financeiro.
+// ---------------------------------------------------------------------------
+function reconstructParseResult(d: Record<string, unknown>): import("@/lib/parse-rateio").ParseResult {
+  const toMap = (v: unknown): Map<string, number> =>
+    new Map(Object.entries((v as Record<string, number>) ?? {}));
+  return {
+    consumoMinimoGrupo:          Number(d.consumoMinimoGrupo ?? 0),
+    pcFixoGrupo:                 Number(d.pcFixoGrupo ?? 0),
+    pcAdicionalGrupo:            Number(d.pcAdicionalGrupo ?? 0),
+    fiGrupo:                     Number(d.fiGrupo ?? 0),
+    admRateadoGrupo:             Number(d.admRateadoGrupo ?? 0),
+    admRateadoPorSegmento:       (d.admRateadoPorSegmento as Record<string, number>) ?? {},
+    admLogonsPorSegmento:        (d.admLogonsPorSegmento as Record<string, Array<{ logon: string; soma: number }>>) ?? {},
+    demoTotalLogonPcCredito:     Number(d.demoTotalLogonPcCredito ?? 0),
+    demoFiPefinPf:               Number(d.demoFiPefinPf ?? 0),
+    demoFiPefinPj:               Number(d.demoFiPefinPj ?? 0),
+    demoOutrosUsuariosNaoSomado: Number(d.demoOutrosUsuariosNaoSomado ?? 0),
+    demoFiPefinPfPorLogon:       (d.demoFiPefinPfPorLogon as Array<{ logon: string; count: number; soma: number }>) ?? [],
+    demoFiPefinPjPorLogon:       (d.demoFiPefinPjPorLogon as Array<{ logon: string; count: number; soma: number }>) ?? [],
+    intranetPorCnpj:             toMap(d.intranetPorCnpj),
+    intranetNovosPorCnpj:        toMap(d.intranetNovosPorCnpj),
+    intranetSeminovosPorCnpj:    toMap(d.intranetSeminovosPorCnpj),
+    unicoAutoPorCnpj:            new Map(), // preenchido pelo Financeiro
+    pcVariavelPorCnpj:           new Map(),
+    pcVariavelTotalLinhas:       Number(d.pcVariavelTotalLinhas ?? 0),
+    pcVariavelLinhasDiretas:     toMap(d.pcVariavelLinhasDiretas),
+    pcVariavelLinhasPorSegmento: toMap(d.pcVariavelLinhasPorSegmento),
+    pcVariavelLinhasAuto:        Number(d.pcVariavelLinhasAuto ?? 0),
+    pcvConsultaPfUsers:          (d.pcvConsultaPfUsers as Array<{ user_id: string; segmento: string | null; count: number }>) ?? [],
+    pcvUsuariosDesconhecidos:    (d.pcvUsuariosDesconhecidos as string[]) ?? [],
+    admLogonsDesconhecidos:      (d.admLogonsDesconhecidos as string[]) ?? [],
+    negativacoesPorCnpj:         toMap(d.negativacoesPorCnpj),
+    hasNegativacoes:             Boolean(d.hasNegativacoes),
+    abasEncontradas:             (d.abasEncontradas as string[]) ?? [],
+    abasFaltando:                (d.abasFaltando as string[]) ?? [],
+    warnings:                    [], // avisos da Etapa 1 não reaparecem aqui
+  };
+}
+
 export const Route = createFileRoute("/rateios/novo")({
   validateSearch: (search: Record<string, unknown>) => ({
     processoId: typeof search.processoId === "string" ? search.processoId : undefined,
@@ -77,8 +118,10 @@ function NovoRateioPage() {
 
   // Auto-carga da planilha salva na Etapa 1
   const [loadingFromStorage, setLoadingFromStorage] = useState(false);
-  const [storageBlob, setStorageBlob]   = useState<Blob | null>(null);
-  const [needsUnicoAuto, setNeedsUnicoAuto] = useState(false);
+  const [storageBlob, setStorageBlob]         = useState<Blob | null>(null);
+  const [needsUnicoAuto, setNeedsUnicoAuto]   = useState(false);
+  /** true quando os dados vieram do parse_data salvo na Etapa 1 (sem download de arquivo) */
+  const [restoredFromParseData, setRestoredFromParseData] = useState(false);
   const uniAutoRef = useRef<HTMLInputElement>(null);
   const autoParseTriggered = useRef(false);
 
@@ -144,7 +187,7 @@ function NovoRateioPage() {
       });
   }, []);
 
-  // Quando vem de "Disponível para distribuição": pré-preenche o mês e baixa o arquivo do Storage
+  // Quando vem de "Disponível para distribuição": pré-preenche o mês e carrega dados da Etapa 1
   useEffect(() => {
     if (!processoId) return;
     setLoadingFromStorage(true);
@@ -155,7 +198,6 @@ function NovoRateioPage() {
       .single()
       .then(async ({ data }) => {
         if (data?.mes_referencia) setMes(data.mes_referencia.slice(0, 7));
-        // Extrai dados de NF Negativações do resultado salvo na Etapa 1
         if (data?.etapa1_resultado) {
           const res = data.etapa1_resultado as Record<string, unknown>;
           const negatPorSeg = res["negat_por_segmento"] as Record<string, number> | undefined;
@@ -164,7 +206,17 @@ function NovoRateioPage() {
           if (negatPorCnpj && Object.keys(negatPorCnpj).length > 0) {
             setProcessoNegatPorCnpj(negatPorCnpj);
           }
+          // Caminho principal: parse_data disponível → reconstrói ParseResult sem baixar nenhum arquivo.
+          // O Financeiro só precisa enviar o arquivo com a aba ÚNICO AUTO.
+          const parseData = res["parse_data"] as Record<string, unknown> | undefined;
+          if (parseData && Object.keys(parseData).length > 0) {
+            setParsed(reconstructParseResult(parseData));
+            setRestoredFromParseData(true);
+            setLoadingFromStorage(false);
+            return;
+          }
         }
+        // Fallback (processos antigos sem parse_data): tenta baixar o arquivo do Storage
         if (!data?.arquivo_storage_path) { setLoadingFromStorage(false); return; }
         const { data: blob, error } = await supabase.storage
           .from("rateio-uploads")
@@ -322,13 +374,8 @@ function NovoRateioPage() {
     if (!f || !parsed) return;
     try {
       const buf = await f.arrayBuffer();
-      const [{ data: pcvData }, { data: gestoresData }] = await Promise.all([
-        supabase.from("pcv_usuarios").select("user_id, segmento").eq("ativo", true),
-        supabase.from("gestores_logon").select("logon, segmento").eq("ativo", true),
-      ]);
-      const pcvMap = new Map((pcvData ?? []).map((u) => [u.user_id.toLowerCase(), u.segmento]));
-      const gestMap = new Map((gestoresData ?? []).map((g) => [g.logon.toUpperCase().trim(), g.segmento]));
-      const sup = parseRateioWorkbook(buf, pcvMap, companies, gestMap);
+      // Só extrai unicoAutoPorCnpj; usa companies para o match nome→CNPJ
+      const sup = parseRateioWorkbook(buf, new Map(), companies, new Map());
       if (sup.unicoAutoPorCnpj.size === 0) {
         toast.error("Aba ÚNICO AUTO não encontrada neste arquivo");
         return;
@@ -523,10 +570,41 @@ function NovoRateioPage() {
               loadingFromStorage || parsing ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Carregando planilha da Etapa 1…
+                  Carregando dados da Etapa 1…
+                </div>
+              ) : restoredFromParseData ? (
+                // Caminho principal: parse_data restaurado do banco — só falta o ÚNICO AUTO
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm text-green-700 font-medium">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Dados da Etapa 1 carregados automaticamente
+                  </div>
+                  {needsUnicoAuto ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3">
+                      <div className="flex items-start gap-2 text-amber-800">
+                        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium">Envie o arquivo do Financeiro (aba ÚNICO AUTO)</p>
+                          <p className="text-xs">
+                            Necessário para distribuir o PC Adicional entre as lojas.
+                          </p>
+                        </div>
+                      </div>
+                      <input ref={uniAutoRef} type="file" accept=".xlsx,.xls" className="hidden"
+                        onChange={handleUnicoAutoFile} />
+                      <Button size="sm" variant="outline" onClick={() => uniAutoRef.current?.click()}>
+                        <Upload className="h-4 w-4" /> Enviar arquivo ÚNICO AUTO
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-sm text-green-700">
+                      <CheckCircle2 className="h-4 w-4" />
+                      ÚNICO AUTO carregado — {parsed?.unicoAutoPorCnpj.size ?? 0} CNPJs
+                    </div>
+                  )}
                 </div>
               ) : !storageBlob ? (
-                // arquivo_storage_path não existe (processo anterior ao recurso)
+                // Fallback (processos antigos sem parse_data): arquivo não encontrado no Storage
                 <div className="space-y-3">
                   <p className="text-sm text-amber-600">
                     ⚠ Arquivo não encontrado no servidor — envie a planilha manualmente.
@@ -539,7 +617,7 @@ function NovoRateioPage() {
                   {file && <p className="text-sm text-muted-foreground">{file.name}</p>}
                 </div>
               ) : (
-                // Blob carregado com sucesso
+                // Fallback (processos antigos): blob baixado do Storage
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 text-sm text-green-700 font-medium">
                     <CheckCircle2 className="h-4 w-4" />
