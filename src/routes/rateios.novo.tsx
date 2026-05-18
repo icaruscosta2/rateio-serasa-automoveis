@@ -72,6 +72,8 @@ function NovoRateioPage() {
   const [saving, setSaving] = useState(false);
   /** Valor da NF Negativações para Automóveis, lido do etapa1_resultado */
   const [negatValorAuto, setNegatValorAuto] = useState<number>(0);
+  /** Contagem de negativações por CNPJ, lida do etapa1_resultado (para distribuição por empresa) */
+  const [processoNegatPorCnpj, setProcessoNegatPorCnpj] = useState<Record<string, number> | null>(null);
 
   // Auto-carga da planilha salva na Etapa 1
   const [loadingFromStorage, setLoadingFromStorage] = useState(false);
@@ -153,11 +155,15 @@ function NovoRateioPage() {
       .single()
       .then(async ({ data }) => {
         if (data?.mes_referencia) setMes(data.mes_referencia.slice(0, 7));
-        // Extrai valor da NF Negativações para Automóveis do resultado salvo
+        // Extrai dados de NF Negativações do resultado salvo na Etapa 1
         if (data?.etapa1_resultado) {
           const res = data.etapa1_resultado as Record<string, unknown>;
           const negatPorSeg = res["negat_por_segmento"] as Record<string, number> | undefined;
           setNegatValorAuto(negatPorSeg?.["AUTOMOVEIS"] ?? 0);
+          const negatPorCnpj = res["negat_por_cnpj"] as Record<string, number> | undefined;
+          if (negatPorCnpj && Object.keys(negatPorCnpj).length > 0) {
+            setProcessoNegatPorCnpj(negatPorCnpj);
+          }
         }
         if (!data?.arquivo_storage_path) { setLoadingFromStorage(false); return; }
         const { data: blob, error } = await supabase.storage
@@ -186,6 +192,18 @@ function NovoRateioPage() {
     if (!parsed || !processoId) return;
     setNeedsUnicoAuto(parsed.unicoAutoPorCnpj.size === 0);
   }, [parsed, processoId]);
+
+  // Injeta negat_por_cnpj do processo na planilha re-parseada (o segundo arquivo não é re-baixado)
+  useEffect(() => {
+    if (!parsed || !processoNegatPorCnpj) return;
+    if (parsed.negativacoesPorCnpj.size > 0) return; // já veio do arquivo
+    setParsed({
+      ...parsed,
+      negativacoesPorCnpj: new Map(Object.entries(processoNegatPorCnpj)),
+      hasNegativacoes: true,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parsed?.abasEncontradas, processoNegatPorCnpj]);
 
   const doParse = async (
     f: File,
