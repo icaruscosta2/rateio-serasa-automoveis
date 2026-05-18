@@ -192,8 +192,8 @@ function DivisaoPage() {
 
   const handleFileNegat = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFileNegat(e.target.files?.[0] ?? null);
-    setParsed(null);
-    setSummary(null);
+    // Não reseta o parsed/summary — o usuário pode subir os dois arquivos em ordens diferentes
+    // e clicar em "Processar" quando ambos estiverem prontos.
   };
 
   const handleParse = async () => {
@@ -440,22 +440,32 @@ function DivisaoPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          {p.etapa1_status === "concluida" ? (
-                            <div className="flex items-center gap-2.5">
-                              <div className="flex flex-col items-center gap-0.5">
-                                <span className={`h-2.5 w-2.5 rounded-full ${p.arquivo_storage_path ? "bg-green-500" : "bg-red-500"}`} />
-                                <span className="text-[9px] text-muted-foreground leading-none">PC</span>
+                          {p.etapa1_status === "concluida" ? (() => {
+                            const res = p.etapa1_resultado as unknown as {
+                              has_negativacoes?: boolean;
+                              negat_valor_total?: number;
+                              negat_por_cnpj?: Record<string, number>;
+                            } | null;
+                            // NF PC verde = processo concluído (arquivo processado com sucesso)
+                            const pcOk = true;
+                            // NF Negat verde = tem dados de negativações salvos
+                            const negatOk =
+                              res?.has_negativacoes === true ||
+                              (res?.negat_valor_total ?? 0) > 0 ||
+                              Object.keys(res?.negat_por_cnpj ?? {}).length > 0;
+                            return (
+                              <div className="flex items-center gap-2.5">
+                                <div className="flex flex-col items-center gap-0.5">
+                                  <span className={`h-2.5 w-2.5 rounded-full ${pcOk ? "bg-green-500" : "bg-red-500"}`} />
+                                  <span className="text-[9px] text-muted-foreground leading-none">PC</span>
+                                </div>
+                                <div className="flex flex-col items-center gap-0.5">
+                                  <span className={`h-2.5 w-2.5 rounded-full ${negatOk ? "bg-green-500" : "bg-red-500"}`} />
+                                  <span className="text-[9px] text-muted-foreground leading-none">Negat</span>
+                                </div>
                               </div>
-                              <div className="flex flex-col items-center gap-0.5">
-                                <span className={`h-2.5 w-2.5 rounded-full ${
-                                  ((p.etapa1_resultado as unknown as {has_negativacoes?: boolean})?.has_negativacoes ||
-                                   ((p.etapa1_resultado as unknown as {negat_valor_total?: number})?.negat_valor_total ?? 0) > 0)
-                                    ? "bg-green-500" : "bg-red-500"
-                                }`} />
-                                <span className="text-[9px] text-muted-foreground leading-none">Negat</span>
-                              </div>
-                            </div>
-                          ) : (
+                            );
+                          })() : (
                             <Badge variant="secondary">Pendente</Badge>
                           )}
                         </TableCell>
