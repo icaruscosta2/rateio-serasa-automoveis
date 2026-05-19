@@ -1,5 +1,6 @@
 import type { ParseResult } from "./parse-rateio";
 import { segmentoDaBandeira, type Segmento } from "./segmentos";
+import { normalizeCnpj } from "./cnpj";
 
 /** Como o Consumo Mínimo é distribuído entre as empresas incluídas */
 export type ConsumoMinimoMethod = "matrizes" | "todas";
@@ -215,7 +216,7 @@ export function computeRateio({ parsed, empresas, pct, consumoMinimoMethod = "ma
     if (seg !== "AUTOMOVEIS") continue;
     const c = e.cnpj_normalizado;
     if (!c || ownerByCnpjAll.get(c) !== e.cod_empresa) continue;
-    totalNegatUniverso += parsed.negativacoesPorCnpj?.get(c) ?? 0;
+    totalNegatUniverso += parsed.negativacoesPorCnpj?.get(normalizeCnpj(c)) ?? 0;
   }
 
   // Consultas ADM Avulsas: distribuição igual entre todas as empresas AUTOMOVEIS incluídas
@@ -234,7 +235,7 @@ export function computeRateio({ parsed, empresas, pct, consumoMinimoMethod = "ma
       const c = e.cnpj_normalizado;
       if (!c) return 0;
       if (ownerByCnpj.get(c) !== e.cod_empresa) return 0;
-      return parsed.negativacoesPorCnpj?.get(c) ?? 0;
+      return parsed.negativacoesPorCnpj?.get(normalizeCnpj(c)) ?? 0;
     })();
     // qPcv: PCV não é base de distribuição (CNPJ é do cliente). Sempre 0.
 

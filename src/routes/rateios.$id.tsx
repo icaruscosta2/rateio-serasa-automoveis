@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ChevronLeft, Download, Trash2 } from "lucide-react";
 import { brl } from "@/lib/format";
-import { formatCnpj } from "@/lib/cnpj";
+import { formatCnpj, normalizeCnpj } from "@/lib/cnpj";
 import { deleteRateio } from "@/lib/delete-rateio";
 import { toast } from "sonner";
 
@@ -98,7 +98,7 @@ function RateioDetailPage() {
     if (totalNegat === 0) return new Map<number, number>();
     const map = new Map<number, number>();
     for (const r of rows) {
-      const cnpj = r.companies?.cnpj_normalizado ?? "";
+      const cnpj = normalizeCnpj(r.companies?.cnpj_normalizado ?? "");
       const count = negativacoesPorCnpj[cnpj] ?? 0;
       if (count > 0) map.set(r.cod_empresa, (negatValorAuto * count) / totalNegat);
     }
