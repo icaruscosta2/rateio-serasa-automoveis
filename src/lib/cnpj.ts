@@ -7,8 +7,10 @@ export function normalizeCnpj(input: unknown): string {
     const n = Number(s);
     if (Number.isFinite(n)) s = Math.round(n).toString();
   }
-  const digits = s.replace(/\D/g, "");
+  let digits = s.replace(/\D/g, "");
   if (!digits) return "";
+  // Alguns sistemas exportam o CNPJ com 15 dígitos e um zero extra no início — descarta-o.
+  if (digits.length === 15 && digits.startsWith("0")) digits = digits.slice(1);
   return digits.padStart(14, "0");
 }
 
