@@ -5,12 +5,16 @@ import { AppLayout } from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ChevronLeft, Download, Trash2 } from "lucide-react";
 import { brl } from "@/lib/format";
@@ -88,15 +92,15 @@ function RateioDetailPage() {
   );
 
   // Negat: recalcular por empresa a partir do parse_summary (sem precisar de coluna no banco).
-  // O denominador usa APENAS as empresas AutomÃ³veis presentes no resultado (= rows),
-  // espelhando a lÃ³gica de totalNegatUniverso em compute-rateio.ts.
+  // O denominador usa APENAS as empresas Automóveis presentes no resultado (= rows),
+  // espelhando a lógica de totalNegatUniverso em compute-rateio.ts.
   const negatByCompany = (() => {
     if (!meta?.parse_summary) return new Map<number, number>();
     const ps = meta.parse_summary;
     const negatValorAuto = Number(ps.negatValorAuto ?? 0);
     const negativacoesPorCnpj = ps.negativacoesPorCnpj as Record<string, number> | undefined;
     if (!negatValorAuto || !negativacoesPorCnpj) return new Map<number, number>();
-    // Soma apenas os registros das empresas incluÃ­das no rateio (segmento AutomÃ³veis)
+    // Soma apenas os registros das empresas incluídas no rateio (segmento Automóveis)
     const totalNegatAuto = rows.reduce((sum, r) => {
       const cnpj = normalizeCnpj(r.companies?.cnpj_normalizado ?? "");
       return sum + (negativacoesPorCnpj[cnpj] ?? 0);
@@ -119,74 +123,84 @@ function RateioDetailPage() {
         return {
           CNPJ: r.companies?.cnpj ?? formatCnpj(r.companies?.cnpj_normalizado ?? ""),
           Empresa: r.companies?.nome ?? "",
-          "Consumo MÃ­nimo": Number(r.consumo_minimo),
+          "Consumo Mínimo": Number(r.consumo_minimo),
           "PC Fixo": Number(r.pc_fixo),
           "PC Adicional": Number(r.pc_adicional),
           "F&I Novos": Number(r.fi_novos),
           "F&I Seminovos": Number(r.fi_seminovos),
           "Consultas ADM Avulsas": Number(r.adm_rateado),
-          "NF NegativaÃ§Ãµes": negat,
-          // r.total jÃ¡ inclui negatRateado â€” nÃ£o somar novamente
+          "NF Negativações": negat,
+          // r.total já inclui negatRateado — não somar novamente
           Total: Number(r.total),
-          HISTÃ“RICO: "",
+          HISTÓRICO: "",
         };
       });
       data.push({
-        CNPJ: "", Empresa: "TOTAL",
-        "Consumo MÃ­nimo": totals.consumo_minimo,
+        CNPJ: "",
+        Empresa: "TOTAL",
+        "Consumo Mínimo": totals.consumo_minimo,
         "PC Fixo": totals.pc_fixo,
         "PC Adicional": totals.pc_adicional,
         "F&I Novos": totals.fi_novos,
         "F&I Seminovos": totals.fi_seminovos,
         "Consultas ADM Avulsas": totals.adm_rateado,
-        "NF NegativaÃ§Ãµes": negatTotal,
+        "NF Negativações": negatTotal,
         Total: totals.total,
-        HISTÃ“RICO: "",
+        HISTÓRICO: "",
       });
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "RESUMO RATEIO");
 
       // ---- Aba 2: Centros de Custos ----
-      // Regras AUTOMÃ“VEIS:
-      //   NOVOS             = Consumo MÃ­nimo + F&I Novos + Consultas ADM Avulsas
+      // Regras AUTOMÓVEIS:
+      //   NOVOS             = Consumo Mínimo + F&I Novos + Consultas ADM Avulsas
       //   SEMINOVOS         = F&I Seminovos
-      //   PEÃ‡AS             = 75% Ã— (PC Fixo + PC Adicional + NF NegativaÃ§Ãµes)
-      //   ASSISTÃŠNCIA TÃ‰C.  = 25% Ã— (PC Fixo + PC Adicional + NF NegativaÃ§Ãµes)
+      //   PEÇAS             = 75% × (PC Fixo + PC Adicional + NF Negativações)
+      //   ASSISTÊNCIA TÉC.  = 25% × (PC Fixo + PC Adicional + NF Negativações)
       const ccRows = rows.map((r) => {
-        const cm   = Number(r.consumo_minimo);
-        const pcf  = Number(r.pc_fixo);
-        const pca  = Number(r.pc_adicional);
-        const fiN  = Number(r.fi_novos);
-        const fiS  = Number(r.fi_seminovos);
-        const adm  = Number(r.adm_rateado);
-        const ngt  = negatByCompany.get(r.cod_empresa) ?? 0;
-        const pcBase = pcf + pca + ngt; // negat vai junto com PC (regra AutomÃ³veis)
-        const novos    = cm + fiN + adm;
+        const cm = Number(r.consumo_minimo);
+        const pcf = Number(r.pc_fixo);
+        const pca = Number(r.pc_adicional);
+        const fiN = Number(r.fi_novos);
+        const fiS = Number(r.fi_seminovos);
+        const adm = Number(r.adm_rateado);
+        const ngt = negatByCompany.get(r.cod_empresa) ?? 0;
+        const pcBase = pcf + pca + ngt; // negat vai junto com PC (regra Automóveis)
+        const novos = cm + fiN + adm;
         const seminovos = fiS;
-        const pecas    = 0.75 * pcBase;
-        const at       = 0.25 * pcBase;
+        const pecas = 0.75 * pcBase;
+        const at = 0.25 * pcBase;
         return {
           CNPJ: r.companies?.cnpj ?? formatCnpj(r.companies?.cnpj_normalizado ?? ""),
           Empresa: r.companies?.nome ?? "",
-          NOVOS:    novos,
+          NOVOS: novos,
           SEMINOVOS: seminovos,
-          "PEÃ‡AS":  pecas,
-          "ASSISTÃŠNCIA TÃ‰CNICA": at,
-          TOTAL:    novos + seminovos + pecas + at,
-          HISTÃ“RICO: "",
+          PEÇAS: pecas,
+          "ASSISTÊNCIA TÉCNICA": at,
+          TOTAL: novos + seminovos + pecas + at,
+          HISTÓRICO: "",
         };
       });
       const ccTotals = ccRows.reduce(
         (acc, r) => ({
           ...acc,
-          NOVOS:    acc.NOVOS + r.NOVOS,
+          NOVOS: acc.NOVOS + r.NOVOS,
           SEMINOVOS: acc.SEMINOVOS + r.SEMINOVOS,
-          "PEÃ‡AS":  acc["PEÃ‡AS"] + r["PEÃ‡AS"],
-          "ASSISTÃŠNCIA TÃ‰CNICA": acc["ASSISTÃŠNCIA TÃ‰CNICA"] + r["ASSISTÃŠNCIA TÃ‰CNICA"],
-          TOTAL:    acc.TOTAL + r.TOTAL,
+          PEÇAS: acc["PEÇAS"] + r["PEÇAS"],
+          "ASSISTÊNCIA TÉCNICA": acc["ASSISTÊNCIA TÉCNICA"] + r["ASSISTÊNCIA TÉCNICA"],
+          TOTAL: acc.TOTAL + r.TOTAL,
         }),
-        { CNPJ: "", Empresa: "TOTAL", NOVOS: 0, SEMINOVOS: 0, "PEÃ‡AS": 0, "ASSISTÃŠNCIA TÃ‰CNICA": 0, TOTAL: 0, HISTÃ“RICO: "" },
+        {
+          CNPJ: "",
+          Empresa: "TOTAL",
+          NOVOS: 0,
+          SEMINOVOS: 0,
+          PEÇAS: 0,
+          "ASSISTÊNCIA TÉCNICA": 0,
+          TOTAL: 0,
+          HISTÓRICO: "",
+        },
       );
       ccRows.push(ccTotals);
       const ws2 = XLSX.utils.json_to_sheet(ccRows);
@@ -199,20 +213,24 @@ function RateioDetailPage() {
     }
   };
 
-  if (loading) return <p className="text-sm text-muted-foreground">Carregandoâ€¦</p>;
-  if (!meta) return <p>Rateio nÃ£o encontrado.</p>;
+  if (loading) return <p className="text-sm text-muted-foreground">Carregando…</p>;
+  if (!meta) return <p>Rateio não encontrado.</p>;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <Link to="/rateios" className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+          <Link
+            to="/rateios"
+            className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+          >
             <ChevronLeft className="h-4 w-4" /> Rateios
           </Link>
           <h1 className="text-3xl font-bold mt-1">
-            RESUMO RATEIO â€”{" "}
+            RESUMO RATEIO —{" "}
             {new Date(meta.mes_referencia + "T12:00:00").toLocaleDateString("pt-BR", {
-              month: "long", year: "numeric",
+              month: "long",
+              year: "numeric",
             })}
           </h1>
         </div>
@@ -228,12 +246,12 @@ function RateioDetailPage() {
 
       <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
         {[
-          ["Consumo MÃ­n.", totals.consumo_minimo],
+          ["Consumo Mín.", totals.consumo_minimo],
           ["PC Fixo", totals.pc_fixo],
           ["PC Adicional", totals.pc_adicional],
           ["F&I (PEFIN PF/PJ)", totals.fi_novos + totals.fi_seminovos],
           ["Consultas ADM Avulsas", totals.adm_rateado],
-          ["NF NegativaÃ§Ãµes", negatTotal],
+          ["NF Negativações", negatTotal],
         ].map(([label, v]) => (
           <Card key={label as string}>
             <CardHeader className="pb-2">
@@ -246,19 +264,31 @@ function RateioDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>DistribuiÃ§Ã£o por CNPJ</CardTitle>
+          <CardTitle>Distribuição por CNPJ</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead rowSpan={2}>Empresa</TableHead>
-                <TableHead rowSpan={2} className="text-right">Consumo MÃ­n.</TableHead>
-                <TableHead rowSpan={2} className="text-right">PC Fixo</TableHead>
-                <TableHead rowSpan={2} className="text-right">PC Adicional</TableHead>
-                <TableHead colSpan={3} className="text-center border-l">F&I</TableHead>
-                <TableHead rowSpan={2} className="text-right border-l">NF Negat.</TableHead>
-                <TableHead rowSpan={2} className="text-right border-l font-bold">Total</TableHead>
+                <TableHead rowSpan={2} className="text-right">
+                  Consumo Mín.
+                </TableHead>
+                <TableHead rowSpan={2} className="text-right">
+                  PC Fixo
+                </TableHead>
+                <TableHead rowSpan={2} className="text-right">
+                  PC Adicional
+                </TableHead>
+                <TableHead colSpan={3} className="text-center border-l">
+                  F&I
+                </TableHead>
+                <TableHead rowSpan={2} className="text-right border-l">
+                  NF Negat.
+                </TableHead>
+                <TableHead rowSpan={2} className="text-right border-l font-bold">
+                  Total
+                </TableHead>
               </TableRow>
               <TableRow>
                 <TableHead className="text-right border-l">Novos</TableHead>
@@ -269,7 +299,7 @@ function RateioDetailPage() {
             <TableBody>
               {rows.map((r) => {
                 const negat = negatByCompany.get(r.cod_empresa) ?? 0;
-                // r.total jÃ¡ inclui negatRateado (calculado em compute-rateio.ts) â€” nÃ£o somar novamente
+                // r.total já inclui negatRateado (calculado em compute-rateio.ts) — não somar novamente
                 const totalComNegat = Number(r.total);
                 return (
                   <TableRow key={r.cod_empresa}>
@@ -285,7 +315,7 @@ function RateioDetailPage() {
                     <TableCell className="text-right border-l">{brl(Number(r.fi_novos))}</TableCell>
                     <TableCell className="text-right">{brl(Number(r.fi_seminovos))}</TableCell>
                     <TableCell className="text-right">{brl(Number(r.adm_rateado))}</TableCell>
-                    <TableCell className="text-right border-l">{negat > 0 ? brl(negat) : "â€”"}</TableCell>
+                    <TableCell className="text-right border-l">{negat > 0 ? brl(negat) : "—"}</TableCell>
                     <TableCell className="text-right border-l font-medium">{brl(totalComNegat)}</TableCell>
                   </TableRow>
                 );
@@ -315,9 +345,10 @@ function RateioDetailPage() {
             <AlertDialogDescription>
               Excluir o rateio de{" "}
               {new Date(meta.mes_referencia + "T12:00:00").toLocaleDateString("pt-BR", {
-                month: "long", year: "numeric",
+                month: "long",
+                year: "numeric",
               })}
-              ? Esta aÃ§Ã£o nÃ£o pode ser desfeita.
+              ? Esta ação não pode ser desfeita.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -329,7 +360,7 @@ function RateioDetailPage() {
                 setDeleting(true);
                 try {
                   await deleteRateio(id);
-                  toast.success("Rateio excluÃ­do");
+                  toast.success("Rateio excluído");
                   navigate({ to: "/rateios" });
                 } catch (err: unknown) {
                   toast.error(err instanceof Error ? err.message : "Erro ao excluir");
@@ -338,7 +369,7 @@ function RateioDetailPage() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleting ? "Excluindoâ€¦" : "Excluir"}
+              {deleting ? "Excluindo…" : "Excluir"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
