@@ -380,6 +380,7 @@ function EnvioPage() {
         "VALOR":                     l.valor,
         "CÓDIGO CONTROLE":           "",
         "CÓDIGO CC RECEBEDOR":       l.cc_recebedor,
+        "HISTÓRICO":                 "",
       }));
       const ws = XLSX.utils.json_to_sheet(wsData);
       const wb = XLSX.utils.book_new();

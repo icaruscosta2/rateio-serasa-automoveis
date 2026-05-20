@@ -87,20 +87,26 @@ function RateioDetailPage() {
     { consumo_minimo: 0, pc_fixo: 0, pc_adicional: 0, fi_novos: 0, fi_seminovos: 0, adm_rateado: 0, total: 0 },
   );
 
-  // Negat: recalcular por empresa a partir do parse_summary (sem precisar de coluna no banco)
+  // Negat: recalcular por empresa a partir do parse_summary (sem precisar de coluna no banco).
+  // O denominador usa APENAS as empresas Automóveis presentes no resultado (= rows),
+  // espelhando a lógica de totalNegatUniverso em compute-rateio.ts.
   const negatByCompany = (() => {
     if (!meta?.parse_summary) return new Map<number, number>();
     const ps = meta.parse_summary;
     const negatValorAuto = Number(ps.negatValorAuto ?? 0);
     const negativacoesPorCnpj = ps.negativacoesPorCnpj as Record<string, number> | undefined;
     if (!negatValorAuto || !negativacoesPorCnpj) return new Map<number, number>();
-    const totalNegat = Object.values(negativacoesPorCnpj).reduce((a, b) => a + b, 0);
-    if (totalNegat === 0) return new Map<number, number>();
+    // Soma apenas os registros das empresas incluídas no rateio (segmento Automóveis)
+    const totalNegatAuto = rows.reduce((sum, r) => {
+      const cnpj = normalizeCnpj(r.companies?.cnpj_normalizado ?? "");
+      return sum + (negativacoesPorCnpj[cnpj] ?? 0);
+    }, 0);
+    if (totalNegatAuto === 0) return new Map<number, number>();
     const map = new Map<number, number>();
     for (const r of rows) {
       const cnpj = normalizeCnpj(r.companies?.cnpj_normalizado ?? "");
       const count = negativacoesPorCnpj[cnpj] ?? 0;
-      if (count > 0) map.set(r.cod_empresa, (negatValorAuto * count) / totalNegat);
+      if (count > 0) map.set(r.cod_empresa, (negatValorAuto * count) / totalNegatAuto);
     }
     return map;
   })();
@@ -120,7 +126,9 @@ function RateioDetailPage() {
           "F&I Seminovos": Number(r.fi_seminovos),
           "Consultas ADM Avulsas": Number(r.adm_rateado),
           "NF Negativações": negat,
-          Total: Number(r.total) + negat,
+          // r.total já inclui negatRateado — não somar novamente
+          Total: Number(r.total),
+          HISTÓRICO: "",
         };
       });
       data.push({
@@ -132,7 +140,8 @@ function RateioDetailPage() {
         "F&I Seminovos": totals.fi_seminovos,
         "Consultas ADM Avulsas": totals.adm_rateado,
         "NF Negativações": negatTotal,
-        Total: totals.total + negatTotal,
+        Total: totals.total,
+        HISTÓRICO: "",
       });
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
@@ -152,7 +161,7 @@ function RateioDetailPage() {
         const fiS  = Number(r.fi_seminovos);
         const adm  = Number(r.adm_rateado);
         const ngt  = negatByCompany.get(r.cod_empresa) ?? 0;
-        const pcBase = pcf + pca + ngt;
+        const pcBase = pcf + pca + ngt; // negat vai junto com PC (regra Automóveis)
         const novos    = cm + fiN + adm;
         const seminovos = fiS;
         const pecas    = 0.75 * pcBase;
@@ -165,6 +174,7 @@ function RateioDetailPage() {
           "PEÇAS":  pecas,
           "ASSISTÊNCIA TÉCNICA": at,
           TOTAL:    novos + seminovos + pecas + at,
+          HISTÓRICO: "",
         };
       });
       const ccTotals = ccRows.reduce(
@@ -176,7 +186,7 @@ function RateioDetailPage() {
           "ASSISTÊNCIA TÉCNICA": acc["ASSISTÊNCIA TÉCNICA"] + r["ASSISTÊNCIA TÉCNICA"],
           TOTAL:    acc.TOTAL + r.TOTAL,
         }),
-        { CNPJ: "", Empresa: "TOTAL", NOVOS: 0, SEMINOVOS: 0, "PEÇAS": 0, "ASSISTÊNCIA TÉCNICA": 0, TOTAL: 0 },
+        { CNPJ: "", Empresa: "TOTAL", NOVOS: 0, SEMINOVOS: 0, "PEÇAS": 0, "ASSISTÊNCIA TÉCNICA": 0, TOTAL: 0, HISTÓRICO: "" },
       );
       ccRows.push(ccTotals);
       const ws2 = XLSX.utils.json_to_sheet(ccRows);
@@ -259,7 +269,8 @@ function RateioDetailPage() {
             <TableBody>
               {rows.map((r) => {
                 const negat = negatByCompany.get(r.cod_empresa) ?? 0;
-                const totalComNegat = Number(r.total) + negat;
+                // r.total já inclui negatRateado (calculado em compute-rateio.ts) — não somar novamente
+                const totalComNegat = Number(r.total);
                 return (
                   <TableRow key={r.cod_empresa}>
                     <TableCell>
@@ -290,7 +301,7 @@ function RateioDetailPage() {
                 <TableCell className="text-right">{brl(totals.fi_seminovos)}</TableCell>
                 <TableCell className="text-right">{brl(totals.adm_rateado)}</TableCell>
                 <TableCell className="text-right border-l">{brl(negatTotal)}</TableCell>
-                <TableCell className="text-right border-l font-bold">{brl(totals.total + negatTotal)}</TableCell>
+                <TableCell className="text-right border-l font-bold">{brl(totals.total)}</TableCell>
               </TableRow>
             </TableFooter>
           </Table>
