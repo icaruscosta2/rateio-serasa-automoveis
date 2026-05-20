@@ -88,15 +88,15 @@ function RateioDetailPage() {
   );
 
   // Negat: recalcular por empresa a partir do parse_summary (sem precisar de coluna no banco).
-  // O denominador usa APENAS as empresas Automóveis presentes no resultado (= rows),
-  // espelhando a lógica de totalNegatUniverso em compute-rateio.ts.
+  // O denominador usa APENAS as empresas AutomÃ³veis presentes no resultado (= rows),
+  // espelhando a lÃ³gica de totalNegatUniverso em compute-rateio.ts.
   const negatByCompany = (() => {
     if (!meta?.parse_summary) return new Map<number, number>();
     const ps = meta.parse_summary;
     const negatValorAuto = Number(ps.negatValorAuto ?? 0);
     const negativacoesPorCnpj = ps.negativacoesPorCnpj as Record<string, number> | undefined;
     if (!negatValorAuto || !negativacoesPorCnpj) return new Map<number, number>();
-    // Soma apenas os registros das empresas incluídas no rateio (segmento Automóveis)
+    // Soma apenas os registros das empresas incluÃ­das no rateio (segmento AutomÃ³veis)
     const totalNegatAuto = rows.reduce((sum, r) => {
       const cnpj = normalizeCnpj(r.companies?.cnpj_normalizado ?? "");
       return sum + (negativacoesPorCnpj[cnpj] ?? 0);
@@ -119,40 +119,40 @@ function RateioDetailPage() {
         return {
           CNPJ: r.companies?.cnpj ?? formatCnpj(r.companies?.cnpj_normalizado ?? ""),
           Empresa: r.companies?.nome ?? "",
-          "Consumo Mínimo": Number(r.consumo_minimo),
+          "Consumo MÃ­nimo": Number(r.consumo_minimo),
           "PC Fixo": Number(r.pc_fixo),
           "PC Adicional": Number(r.pc_adicional),
           "F&I Novos": Number(r.fi_novos),
           "F&I Seminovos": Number(r.fi_seminovos),
           "Consultas ADM Avulsas": Number(r.adm_rateado),
-          "NF Negativações": negat,
-          // r.total já inclui negatRateado — não somar novamente
+          "NF NegativaÃ§Ãµes": negat,
+          // r.total jÃ¡ inclui negatRateado â€” nÃ£o somar novamente
           Total: Number(r.total),
-          HISTÓRICO: "",
+          HISTÃ“RICO: "",
         };
       });
       data.push({
         CNPJ: "", Empresa: "TOTAL",
-        "Consumo Mínimo": totals.consumo_minimo,
+        "Consumo MÃ­nimo": totals.consumo_minimo,
         "PC Fixo": totals.pc_fixo,
         "PC Adicional": totals.pc_adicional,
         "F&I Novos": totals.fi_novos,
         "F&I Seminovos": totals.fi_seminovos,
         "Consultas ADM Avulsas": totals.adm_rateado,
-        "NF Negativações": negatTotal,
+        "NF NegativaÃ§Ãµes": negatTotal,
         Total: totals.total,
-        HISTÓRICO: "",
+        HISTÃ“RICO: "",
       });
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "RESUMO RATEIO");
 
       // ---- Aba 2: Centros de Custos ----
-      // Regras AUTOMÓVEIS:
-      //   NOVOS             = Consumo Mínimo + F&I Novos + Consultas ADM Avulsas
+      // Regras AUTOMÃ“VEIS:
+      //   NOVOS             = Consumo MÃ­nimo + F&I Novos + Consultas ADM Avulsas
       //   SEMINOVOS         = F&I Seminovos
-      //   PEÇAS             = 75% × (PC Fixo + PC Adicional + NF Negativações)
-      //   ASSISTÊNCIA TÉC.  = 25% × (PC Fixo + PC Adicional + NF Negativações)
+      //   PEÃ‡AS             = 75% Ã— (PC Fixo + PC Adicional + NF NegativaÃ§Ãµes)
+      //   ASSISTÃŠNCIA TÃ‰C.  = 25% Ã— (PC Fixo + PC Adicional + NF NegativaÃ§Ãµes)
       const ccRows = rows.map((r) => {
         const cm   = Number(r.consumo_minimo);
         const pcf  = Number(r.pc_fixo);
@@ -161,7 +161,7 @@ function RateioDetailPage() {
         const fiS  = Number(r.fi_seminovos);
         const adm  = Number(r.adm_rateado);
         const ngt  = negatByCompany.get(r.cod_empresa) ?? 0;
-        const pcBase = pcf + pca + ngt; // negat vai junto com PC (regra Automóveis)
+        const pcBase = pcf + pca + ngt; // negat vai junto com PC (regra AutomÃ³veis)
         const novos    = cm + fiN + adm;
         const seminovos = fiS;
         const pecas    = 0.75 * pcBase;
@@ -171,10 +171,10 @@ function RateioDetailPage() {
           Empresa: r.companies?.nome ?? "",
           NOVOS:    novos,
           SEMINOVOS: seminovos,
-          "PEÇAS":  pecas,
-          "ASSISTÊNCIA TÉCNICA": at,
+          "PEÃ‡AS":  pecas,
+          "ASSISTÃŠNCIA TÃ‰CNICA": at,
           TOTAL:    novos + seminovos + pecas + at,
-          HISTÓRICO: "",
+          HISTÃ“RICO: "",
         };
       });
       const ccTotals = ccRows.reduce(
@@ -182,11 +182,11 @@ function RateioDetailPage() {
           ...acc,
           NOVOS:    acc.NOVOS + r.NOVOS,
           SEMINOVOS: acc.SEMINOVOS + r.SEMINOVOS,
-          "PEÇAS":  acc["PEÇAS"] + r["PEÇAS"],
-          "ASSISTÊNCIA TÉCNICA": acc["ASSISTÊNCIA TÉCNICA"] + r["ASSISTÊNCIA TÉCNICA"],
+          "PEÃ‡AS":  acc["PEÃ‡AS"] + r["PEÃ‡AS"],
+          "ASSISTÃŠNCIA TÃ‰CNICA": acc["ASSISTÃŠNCIA TÃ‰CNICA"] + r["ASSISTÃŠNCIA TÃ‰CNICA"],
           TOTAL:    acc.TOTAL + r.TOTAL,
         }),
-        { CNPJ: "", Empresa: "TOTAL", NOVOS: 0, SEMINOVOS: 0, "PEÇAS": 0, "ASSISTÊNCIA TÉCNICA": 0, TOTAL: 0, HISTÓRICO: "" },
+        { CNPJ: "", Empresa: "TOTAL", NOVOS: 0, SEMINOVOS: 0, "PEÃ‡AS": 0, "ASSISTÃŠNCIA TÃ‰CNICA": 0, TOTAL: 0, HISTÃ“RICO: "" },
       );
       ccRows.push(ccTotals);
       const ws2 = XLSX.utils.json_to_sheet(ccRows);
@@ -199,8 +199,8 @@ function RateioDetailPage() {
     }
   };
 
-  if (loading) return <p className="text-sm text-muted-foreground">Carregando…</p>;
-  if (!meta) return <p>Rateio não encontrado.</p>;
+  if (loading) return <p className="text-sm text-muted-foreground">Carregandoâ€¦</p>;
+  if (!meta) return <p>Rateio nÃ£o encontrado.</p>;
 
   return (
     <div className="space-y-6">
@@ -210,7 +210,7 @@ function RateioDetailPage() {
             <ChevronLeft className="h-4 w-4" /> Rateios
           </Link>
           <h1 className="text-3xl font-bold mt-1">
-            RESUMO RATEIO —{" "}
+            RESUMO RATEIO â€”{" "}
             {new Date(meta.mes_referencia + "T12:00:00").toLocaleDateString("pt-BR", {
               month: "long", year: "numeric",
             })}
@@ -228,12 +228,12 @@ function RateioDetailPage() {
 
       <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
         {[
-          ["Consumo Mín.", totals.consumo_minimo],
+          ["Consumo MÃ­n.", totals.consumo_minimo],
           ["PC Fixo", totals.pc_fixo],
           ["PC Adicional", totals.pc_adicional],
           ["F&I (PEFIN PF/PJ)", totals.fi_novos + totals.fi_seminovos],
           ["Consultas ADM Avulsas", totals.adm_rateado],
-          ["NF Negativações", negatTotal],
+          ["NF NegativaÃ§Ãµes", negatTotal],
         ].map(([label, v]) => (
           <Card key={label as string}>
             <CardHeader className="pb-2">
@@ -246,14 +246,14 @@ function RateioDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Distribuição por CNPJ</CardTitle>
+          <CardTitle>DistribuiÃ§Ã£o por CNPJ</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead rowSpan={2}>Empresa</TableHead>
-                <TableHead rowSpan={2} className="text-right">Consumo Mín.</TableHead>
+                <TableHead rowSpan={2} className="text-right">Consumo MÃ­n.</TableHead>
                 <TableHead rowSpan={2} className="text-right">PC Fixo</TableHead>
                 <TableHead rowSpan={2} className="text-right">PC Adicional</TableHead>
                 <TableHead colSpan={3} className="text-center border-l">F&I</TableHead>
@@ -269,7 +269,7 @@ function RateioDetailPage() {
             <TableBody>
               {rows.map((r) => {
                 const negat = negatByCompany.get(r.cod_empresa) ?? 0;
-                // r.total já inclui negatRateado (calculado em compute-rateio.ts) — não somar novamente
+                // r.total jÃ¡ inclui negatRateado (calculado em compute-rateio.ts) â€” nÃ£o somar novamente
                 const totalComNegat = Number(r.total);
                 return (
                   <TableRow key={r.cod_empresa}>
@@ -285,7 +285,7 @@ function RateioDetailPage() {
                     <TableCell className="text-right border-l">{brl(Number(r.fi_novos))}</TableCell>
                     <TableCell className="text-right">{brl(Number(r.fi_seminovos))}</TableCell>
                     <TableCell className="text-right">{brl(Number(r.adm_rateado))}</TableCell>
-                    <TableCell className="text-right border-l">{negat > 0 ? brl(negat) : "—"}</TableCell>
+                    <TableCell className="text-right border-l">{negat > 0 ? brl(negat) : "â€”"}</TableCell>
                     <TableCell className="text-right border-l font-medium">{brl(totalComNegat)}</TableCell>
                   </TableRow>
                 );
@@ -317,7 +317,7 @@ function RateioDetailPage() {
               {new Date(meta.mes_referencia + "T12:00:00").toLocaleDateString("pt-BR", {
                 month: "long", year: "numeric",
               })}
-              ? Esta ação não pode ser desfeita.
+              ? Esta aÃ§Ã£o nÃ£o pode ser desfeita.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -329,7 +329,7 @@ function RateioDetailPage() {
                 setDeleting(true);
                 try {
                   await deleteRateio(id);
-                  toast.success("Rateio excluído");
+                  toast.success("Rateio excluÃ­do");
                   navigate({ to: "/rateios" });
                 } catch (err: unknown) {
                   toast.error(err instanceof Error ? err.message : "Erro ao excluir");
@@ -338,7 +338,7 @@ function RateioDetailPage() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleting ? "Excluindo…" : "Excluir"}
+              {deleting ? "Excluindoâ€¦" : "Excluir"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
