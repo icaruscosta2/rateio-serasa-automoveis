@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { AppLayout } from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
+import { segmentoDaBandeira } from "@/lib/segmentos";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -102,6 +103,7 @@ function CollapseGroup({
   count,
   selectedCount,
   defaultOpen = true,
+  indent = false,
   children,
   onSelectAll,
   onDeselectAll,
@@ -110,33 +112,38 @@ function CollapseGroup({
   count: number;
   selectedCount: number;
   defaultOpen?: boolean;
+  indent?: boolean;
   children: React.ReactNode;
   onSelectAll: () => void;
   onDeselectAll: () => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const allSelected = selectedCount === count;
+  const allSelected = selectedCount === count && count > 0;
   const someSelected = selectedCount > 0 && !allSelected;
 
   return (
-    <div className="border rounded-md overflow-hidden">
+    <div className={cn("border rounded-md overflow-hidden", indent && "border-muted ml-4")}>
       <div
-        className="flex items-center gap-2 px-3 py-2 bg-muted/40 cursor-pointer select-none"
+        className={cn(
+          "flex items-center gap-2 px-3 py-2 cursor-pointer select-none",
+          indent ? "bg-muted/20" : "bg-muted/50",
+        )}
         onClick={() => setOpen((o) => !o)}
       >
         {open ? (
-          <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
         ) : (
-          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
         )}
-        <span className="text-sm font-semibold flex-1">{title}</span>
+        <span className={cn("flex-1", indent ? "text-xs font-medium" : "text-sm font-semibold")}>
+          {title}
+        </span>
         <Badge
           variant={selectedCount > 0 ? "default" : "secondary"}
           className="text-xs"
         >
           {selectedCount}/{count}
         </Badge>
-        {/* Selecionar / Deselecionar todos — não propaga o click para o collapse */}
         <button
           type="button"
           onClick={(e) => {
@@ -371,15 +378,26 @@ function RateiosGeraisPage() {
     return m;
   }, [centrosTodos]);
 
-  /* ─────────── Grupos de empresas por bandeira ─────────── */
-  const empresaGroups = useMemo(() => {
-    const m = new Map<string, Empresa[]>();
+  /* ─────────── Grupos de empresas: Segmento → Bandeira ─────────── */
+  const empresasBySegBandeira = useMemo(() => {
+    // segmento -> bandeira -> empresas
+    const segMap = new Map<string, Map<string, Empresa[]>>();
     for (const e of empresasArr) {
-      const key = e.bandeira?.trim() || "Outros";
-      if (!m.has(key)) m.set(key, []);
-      m.get(key)!.push(e);
+      const seg  = segmentoDaBandeira(e.bandeira) ?? "Outros";
+      const band = e.bandeira?.trim() || "Sem Bandeira";
+      if (!segMap.has(seg)) segMap.set(seg, new Map());
+      const bandMap = segMap.get(seg)!;
+      if (!bandMap.has(band)) bandMap.set(band, []);
+      bandMap.get(band)!.push(e);
     }
-    return Array.from(m.entries()).sort(([a], [b]) => a.localeCompare(b));
+    return Array.from(segMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([seg, bandMap]) => ({
+        seg,
+        bandeiras: Array.from(bandMap.entries())
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([band, emps]) => ({ band, emps })),
+      }));
   }, [empresasArr]);
 
   /* ─────────── Auto-fill: Pagadora ─────────── */
@@ -870,51 +888,70 @@ function RateiosGeraisPage() {
           {loadingBase ? (
             <p className="text-sm text-muted-foreground p-6">Carregando…</p>
           ) : (
-            <div className="p-4 space-y-2 max-h-[50vh] overflow-y-auto">
-              {empresaGroups.map(([bandeira, emps]) => {
-                const groupCods = emps.map((e) => e.cod_empresa);
-                const selCount  = groupCods.filter((c) => selectedEmps.has(c)).length;
+            <div className="p-4 space-y-2 max-h-[55vh] overflow-y-auto">
+              {empresasBySegBandeira.map(({ seg, bandeiras }) => {
+                const segCods    = bandeiras.flatMap((b) => b.emps.map((e) => e.cod_empresa));
+                const segSelCount = segCods.filter((c) => selectedEmps.has(c)).length;
                 return (
                   <CollapseGroup
-                    key={bandeira}
-                    title={bandeira}
-                    count={emps.length}
-                    selectedCount={selCount}
-                    onSelectAll={() => selectAllEmps(groupCods)}
-                    onDeselectAll={() => deselectAllEmps(groupCods)}
+                    key={seg}
+                    title={seg}
+                    count={segCods.length}
+                    selectedCount={segSelCount}
+                    onSelectAll={() => selectAllEmps(segCods)}
+                    onDeselectAll={() => deselectAllEmps(segCods)}
                   >
-                    {emps.map((emp) => {
-                      const isPag      = emp.cod_empresa === pagNum;
-                      const isSelected = selectedEmps.has(emp.cod_empresa);
-                      return (
-                        <div
-                          key={emp.cod_empresa}
-                          className={cn(
-                            "flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/40 transition-colors",
-                            isPag && "bg-primary/5 border-l-2 border-l-primary",
-                            !isSelected && "opacity-50",
-                          )}
-                          onClick={() => toggleEmp(emp.cod_empresa)}
-                        >
-                          <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={() => toggleEmp(emp.cod_empresa)}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <span className={cn("text-sm flex-1", isPag && "font-semibold text-primary")}>
-                            {emp.nome}
-                          </span>
-                          {isPag && (
-                            <Badge variant="default" className="text-[10px] py-0 h-4">
-                              Pagadora
-                            </Badge>
-                          )}
-                          <span className="text-xs text-muted-foreground font-mono">
-                            {emp.cod_empresa}
-                          </span>
-                        </div>
-                      );
-                    })}
+                    <div className="p-2 space-y-1.5">
+                      {bandeiras.map(({ band, emps }) => {
+                        const bandCods    = emps.map((e) => e.cod_empresa);
+                        const bandSelCount = bandCods.filter((c) => selectedEmps.has(c)).length;
+                        return (
+                          <CollapseGroup
+                            key={band}
+                            title={band}
+                            count={emps.length}
+                            selectedCount={bandSelCount}
+                            indent
+                            defaultOpen={false}
+                            onSelectAll={() => selectAllEmps(bandCods)}
+                            onDeselectAll={() => deselectAllEmps(bandCods)}
+                          >
+                            {emps.map((emp) => {
+                              const isPag      = emp.cod_empresa === pagNum;
+                              const isSelected = selectedEmps.has(emp.cod_empresa);
+                              return (
+                                <div
+                                  key={emp.cod_empresa}
+                                  className={cn(
+                                    "flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/40 transition-colors",
+                                    isPag && "bg-primary/5 border-l-2 border-l-primary",
+                                    !isSelected && "opacity-50",
+                                  )}
+                                  onClick={() => toggleEmp(emp.cod_empresa)}
+                                >
+                                  <Checkbox
+                                    checked={isSelected}
+                                    onCheckedChange={() => toggleEmp(emp.cod_empresa)}
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                  <span className={cn("text-sm flex-1", isPag && "font-semibold text-primary")}>
+                                    {emp.nome}
+                                  </span>
+                                  {isPag && (
+                                    <Badge variant="default" className="text-[10px] py-0 h-4">
+                                      Pagadora
+                                    </Badge>
+                                  )}
+                                  <span className="text-xs text-muted-foreground font-mono">
+                                    {emp.cod_empresa}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </CollapseGroup>
+                        );
+                      })}
+                    </div>
                   </CollapseGroup>
                 );
               })}
