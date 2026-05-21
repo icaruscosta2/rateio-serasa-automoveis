@@ -16,6 +16,7 @@ import {
   Table2,
   Landmark,
   LayoutGrid,
+  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -107,6 +108,10 @@ export function AppLayout({ children }: { children?: React.ReactNode } = {}) {
         {navItem("/empresas", "Empresas", Building2)}
         {navItem("/centro-custo", "Centro de Custo", LayoutGrid)}
         {navItem("/conta-contabil", "Conta Contábil", Landmark)}
+
+        {/* ── RATEIOS GERAIS ── */}
+        {sectionLabel("Rateios Gerais")}
+        {navItem("/rateios-gerais", "Rateio por NF", Receipt)}
 
         {/* ── RATEIO DE DESPESAS ── */}
         {sectionLabel("Rateio de Despesas")}
