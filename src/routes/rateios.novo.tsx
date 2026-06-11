@@ -1102,8 +1102,7 @@ function NovoRateioPage() {
                 </div>
                 {preview.fatiaAuto.negat > 0 ? (
                   <p className="text-xs text-muted-foreground">
-                    Proporcional ao nº de registros DOCUMENTO CREDOR —{" "}
-                    {preview.totals.qtdNegativacoes} negativações entre as lojas incluídas
+                    Dividido igualmente entre as matrizes incluídas
                   </p>
                 ) : (
                   <p className="text-xs text-muted-foreground italic">
