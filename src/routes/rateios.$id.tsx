@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ChevronLeft, Download, Trash2 } from "lucide-react";
 import { brl } from "@/lib/format";
-import { formatCnpj, normalizeCnpj } from "@/lib/cnpj";
+import { formatCnpj } from "@/lib/cnpj";
 import { deleteRateio } from "@/lib/delete-rateio";
 import { toast } from "sonner";
 
@@ -39,7 +39,7 @@ interface ResultRow {
   fi_seminovos: number;
   adm_rateado: number;
   total: number;
-  companies: { nome: string; cnpj: string | null; cnpj_normalizado: string | null } | null;
+  companies: { nome: string; cnpj: string | null; cnpj_normalizado: string | null; is_matriz: boolean } | null;
 }
 
 interface RateioMeta {
@@ -68,7 +68,7 @@ function RateioDetailPage() {
         supabase.from("rateios").select("*").eq("id", id).single(),
         supabase
           .from("rateio_resultados")
-          .select("*, companies(nome, cnpj, cnpj_normalizado)")
+          .select("*, companies(nome, cnpj, cnpj_normalizado, is_matriz)")
           .eq("rateio_id", id)
           .order("total", { ascending: false }),
       ]);
@@ -91,26 +91,17 @@ function RateioDetailPage() {
     { consumo_minimo: 0, pc_fixo: 0, pc_adicional: 0, fi_novos: 0, fi_seminovos: 0, adm_rateado: 0, total: 0 },
   );
 
-  // Negat: recalcular por empresa a partir do parse_summary (sem precisar de coluna no banco).
-  // O denominador usa APENAS as empresas Automóveis presentes no resultado (= rows),
-  // espelhando a lógica de totalNegatUniverso em compute-rateio.ts.
+  // Negat: dividido igualmente entre as matrizes incluídas (mesma regra do Consumo Mínimo).
   const negatByCompany = (() => {
     if (!meta?.parse_summary) return new Map<number, number>();
-    const ps = meta.parse_summary;
-    const negatValorAuto = Number(ps.negatValorAuto ?? 0);
-    const negativacoesPorCnpj = ps.negativacoesPorCnpj as Record<string, number> | undefined;
-    if (!negatValorAuto || !negativacoesPorCnpj) return new Map<number, number>();
-    // Soma apenas os registros das empresas incluídas no rateio (segmento Automóveis)
-    const totalNegatAuto = rows.reduce((sum, r) => {
-      const cnpj = normalizeCnpj(r.companies?.cnpj_normalizado ?? "");
-      return sum + (negativacoesPorCnpj[cnpj] ?? 0);
-    }, 0);
-    if (totalNegatAuto === 0) return new Map<number, number>();
+    const negatValorAuto = Number(meta.parse_summary.negatValorAuto ?? 0);
+    if (!negatValorAuto) return new Map<number, number>();
+    const matrizes = rows.filter((r) => r.companies?.is_matriz);
+    if (matrizes.length === 0) return new Map<number, number>();
+    const valorPorMatriz = negatValorAuto / matrizes.length;
     const map = new Map<number, number>();
-    for (const r of rows) {
-      const cnpj = normalizeCnpj(r.companies?.cnpj_normalizado ?? "");
-      const count = negativacoesPorCnpj[cnpj] ?? 0;
-      if (count > 0) map.set(r.cod_empresa, (negatValorAuto * count) / totalNegatAuto);
+    for (const r of matrizes) {
+      map.set(r.cod_empresa, valorPorMatriz);
     }
     return map;
   })();
