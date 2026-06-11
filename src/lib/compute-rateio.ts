@@ -208,17 +208,6 @@ export function computeRateio({ parsed, empresas, pct, consumoMinimoMethod = "ma
   // Não há fallback para Intranet — se Único Auto estiver zerado, nenhuma empresa recebe.
   const totalPcAdicionalBase = totalUnicoAutoUniverso;
 
-  // NF Negativações: distribuição proporcional ao nº de negativações por CNPJ (DOCUMENTO CREDOR).
-  // Universo: todas as empresas AUTOMOVEIS com bandeira mapeada.
-  let totalNegatUniverso = 0;
-  for (const e of empresas) {
-    const seg = segmentoDaBandeira(e.bandeira);
-    if (seg !== "AUTOMOVEIS") continue;
-    const c = e.cnpj_normalizado;
-    if (!c || ownerByCnpjAll.get(c) !== e.cod_empresa) continue;
-    totalNegatUniverso += parsed.negativacoesPorCnpj?.get(normalizeCnpj(c)) ?? 0;
-  }
-
   // Consultas ADM Avulsas: distribuição igual entre todas as empresas AUTOMOVEIS incluídas
   // (mesma regra do PC Fixo, mas restrita ao segmento Automóveis).
   const autoIncluidas = incluidas.filter(
@@ -270,11 +259,10 @@ export function computeRateio({ parsed, empresas, pct, consumoMinimoMethod = "ma
       admRateado = fatia.adm / autoIncluidas.length;
     }
 
-    // NF Negativações: proporcional ao nº de negativações por CNPJ (DOCUMENTO CREDOR).
-    // Só Automóveis recebe; se não há registros de negat, nenhuma empresa recebe.
+    // NF Negativações: dividido igualmente entre as matrizes incluídas (mesma regra do Consumo Mínimo).
     let negatRateado = 0;
-    if (seg === "AUTOMOVEIS" && totalNegatUniverso > 0 && fatia.negat > 0) {
-      negatRateado = (fatia.negat * qNegat) / totalNegatUniverso;
+    if (seg === "AUTOMOVEIS" && e.is_matriz && matrizes.length > 0 && fatia.negat > 0) {
+      negatRateado = fatia.negat / matrizes.length;
     }
 
     const total = consumoMinimo + pcFixo + pcAdicional + fiNovos + fiSeminovos + admRateado + negatRateado;
