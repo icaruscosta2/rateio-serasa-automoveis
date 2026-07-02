@@ -34,6 +34,8 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
+  History,
+  Pencil,
   Percent,
   RefreshCw,
   Table2,
@@ -80,6 +82,18 @@ interface LinhaLancamento {
   valor: number;
   cc_recebedor: number | string;
 }
+
+interface HistoricoEntry {
+  id: string;
+  data: string;
+  nr_nota: string;
+  nr_processo: string;
+  pagadora: string;
+  total_empresas: number;
+  valor_total: number;
+}
+
+const HISTORICO_KEY = "rg_historico";
 
 /* ─── Helpers ─── */
 
@@ -307,8 +321,19 @@ function RateiosGeraisPage() {
   const [loadingBase, setLoadingBase] = useState(true);
 
   /* ── Formulário NF ── */
-  const [nrNota,  setNrNota]  = useState("");
-  const [valor,   setValor]   = useState("");
+  const [nrNota,      setNrNota]      = useState("");
+  const [nrProcesso,  setNrProcesso]  = useState("");
+  const [valor,       setValor]       = useState("");
+
+  /* ── Edição de valores na prévia ── */
+  const [editMode,       setEditMode]       = useState(false);
+  const [valueOverrides, setValueOverrides] = useState<Map<string, number>>(new Map());
+
+  /* ── Histórico ── */
+  const [historico, setHistorico] = useState<HistoricoEntry[]>(() => {
+    try { return JSON.parse(localStorage.getItem(HISTORICO_KEY) ?? "[]"); }
+    catch { return []; }
+  });
 
   /* ── Empresa pagadora (auto-fill) ── */
   const [pagCod,  setPagCod]  = useState("");
@@ -657,28 +682,60 @@ function RateiosGeraisPage() {
 
   const totalGeral = linhas.reduce((s, l) => s + l.valor, 0);
 
+  const effectiveTotalGeral = useMemo(() => {
+    if (valueOverrides.size === 0) return totalGeral;
+    return linhas.reduce((s, l) => {
+      const key = `${l.cod_pagador}-${l.cod_centro_custo}`;
+      return s + (valueOverrides.has(key) ? valueOverrides.get(key)! : l.valor);
+    }, 0);
+  }, [linhas, valueOverrides, totalGeral]);
+
+  // Reset edit mode quando a prévia é fechada
+  useEffect(() => {
+    if (!showPreview) { setEditMode(false); setValueOverrides(new Map()); }
+  }, [showPreview]);
+
   /* ─────────── Export ─────────── */
   const handleExport = () => {
     if (!linhas.length) { toast.error("Nenhuma linha para exportar."); return; }
     try {
-      const wsData = linhas.map((l) => ({
-        "CÓDIGO EMPRESA RECEBER": l.cod_recebedor,
-        "NOME EMPRESA RECEBER":   l.nome_recebedor,
-        "CÓDIGO EMPRESA A PAGAR": l.cod_pagador,
-        "NOME EMPRESA A PAGAR":   l.nome_pagador,
-        "NÚMERO FATURA":          l.nr_fatura,
-        "DATA RATEIO":            l.data_rateio,
-        "CÓDIGO CENTRO DE CUSTO": l.cod_centro_custo,
-        "CÓDIGO CONTA CONTÁBIL":  l.cod_conta_contabil,
-        "VALOR":                  l.valor,
-        "CÓDIGO CONTROLE":        "",
-        "CÓDIGO CC RECEBEDOR":    l.cc_recebedor,
-        "HISTÓRICO":              "",
-      }));
+      const wsData = linhas.map((l) => {
+        const key = `${l.cod_pagador}-${l.cod_centro_custo}`;
+        const valorFinal = valueOverrides.has(key) ? valueOverrides.get(key)! : l.valor;
+        return {
+          "CÓDIGO EMPRESA RECEBER": l.cod_recebedor,
+          "NOME EMPRESA RECEBER":   l.nome_recebedor,
+          "CÓDIGO EMPRESA A PAGAR": l.cod_pagador,
+          "NOME EMPRESA A PAGAR":   l.nome_pagador,
+          "NÚMERO FATURA":          l.nr_fatura,
+          "DATA RATEIO":            l.data_rateio,
+          "CÓDIGO CENTRO DE CUSTO": l.cod_centro_custo,
+          "CÓDIGO CONTA CONTÁBIL":  l.cod_conta_contabil,
+          "VALOR":                  valorFinal,
+          "CÓDIGO CONTROLE":        "",
+          "CÓDIGO CC RECEBEDOR":    l.cc_recebedor,
+          "HISTÓRICO":              nrProcesso || "",
+        };
+      });
       const ws = XLSX.utils.json_to_sheet(wsData);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "LANÇAMENTOS NBS");
       XLSX.writeFile(wb, `LANCAMENTOS_NBS_GERAL_${todayIso().slice(0, 7)}.xlsx`);
+
+      // Salva no histórico
+      const entry: HistoricoEntry = {
+        id: crypto.randomUUID(),
+        data: todayIso(),
+        nr_nota: nrNota,
+        nr_processo: nrProcesso,
+        pagadora: pagadora?.nome ?? "",
+        total_empresas: selectedEmpsList.length,
+        valor_total: round2(effectiveTotalGeral),
+      };
+      const updated = [entry, ...historico].slice(0, 50);
+      localStorage.setItem(HISTORICO_KEY, JSON.stringify(updated));
+      setHistorico(updated);
+
       toast.success("Arquivo exportado com sucesso.");
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao exportar");
@@ -694,6 +751,38 @@ function RateiosGeraisPage() {
           Divida o valor de uma nota fiscal entre empresas e centros de custo
         </p>
       </div>
+
+      {/* ══════════════════════════════════
+          CARD HISTÓRICO
+      ══════════════════════════════════ */}
+      {historico.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <History className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Histórico de Exportações</CardTitle>
+              <span className="text-xs text-muted-foreground ml-auto">{historico.length} registro{historico.length !== 1 ? "s" : ""}</span>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="max-h-52 overflow-y-auto divide-y text-sm">
+              {historico.map((h) => (
+                <div key={h.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30">
+                  <span className="text-xs text-muted-foreground font-mono w-24 shrink-0">
+                    {new Date(h.data + "T12:00:00").toLocaleDateString("pt-BR")}
+                  </span>
+                  <span className="font-mono text-xs text-muted-foreground w-28 shrink-0">
+                    NF {h.nr_nota || "—"}{h.nr_processo ? ` · ${h.nr_processo}` : ""}
+                  </span>
+                  <span className="flex-1 truncate text-xs">{h.pagadora}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">{h.total_empresas} empresa{h.total_empresas !== 1 ? "s" : ""}</span>
+                  <span className="font-semibold tabular-nums text-xs w-28 text-right shrink-0">{brl(h.valor_total)}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Datalists ── */}
       <datalist id="dl-rg-emp-nome">
@@ -722,7 +811,7 @@ function RateiosGeraisPage() {
             <p className="text-sm text-muted-foreground">Carregando…</p>
           ) : (
             <div className="space-y-5">
-              {/* NF + Valor */}
+              {/* NF + Processo + Valor */}
               <div className="flex flex-wrap gap-4">
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Nº Nota Fiscal</label>
@@ -730,6 +819,15 @@ function RateiosGeraisPage() {
                     placeholder="Ex: 001234"
                     value={nrNota}
                     onChange={(e) => { setNrNota(e.target.value); setShowPreview(false); }}
+                    className="w-36 font-mono"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Nº Processo</label>
+                  <Input
+                    placeholder="Ex: PROC-001"
+                    value={nrProcesso}
+                    onChange={(e) => setNrProcesso(e.target.value)}
                     className="w-36 font-mono"
                   />
                 </div>
@@ -1077,13 +1175,27 @@ function RateiosGeraisPage() {
                 <CardDescription>
                   Verifique os valores antes de exportar.{" "}
                   {linhas.length} linha{linhas.length !== 1 ? "s" : ""} · Total:{" "}
-                  <span className="font-semibold text-foreground">{brl(totalGeral)}</span>
+                  <span className="font-semibold text-foreground">{brl(effectiveTotalGeral)}</span>
+                  {valueOverrides.size > 0 && (
+                    <span className="ml-2 text-amber-600 text-xs">({valueOverrides.size} valor{valueOverrides.size !== 1 ? "es" : ""} editado{valueOverrides.size !== 1 ? "s" : ""})</span>
+                  )}
                 </CardDescription>
               </div>
-              <Button onClick={handleExport} className="gap-2 shrink-0">
-                <Download className="h-4 w-4" />
-                Confirmar e Exportar XLSX
-              </Button>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  variant={editMode ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setEditMode((v) => !v)}
+                  className="gap-2"
+                >
+                  <Pencil className="h-4 w-4" />
+                  {editMode ? "Editando" : "Editar"}
+                </Button>
+                <Button onClick={handleExport} className="gap-2">
+                  <Download className="h-4 w-4" />
+                  Confirmar e Exportar XLSX
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="p-0">
@@ -1108,9 +1220,12 @@ function RateiosGeraisPage() {
                 </TableHeader>
                 <TableBody>
                   {selectedEmpsList.map((emp) => {
-                    const isPag   = emp.cod_empresa === pagNum;
-                    const rowMap  = previewMatrix.get(emp.cod_empresa) ?? new Map();
-                    const rowTotal = Array.from(rowMap.values()).reduce((s, v) => s + v, 0);
+                    const isPag = emp.cod_empresa === pagNum;
+                    const rowTotal = selectedCCsList.reduce((s, cc) => {
+                      const key = `${emp.cod_empresa}-${cc.cod_centro_custo}`;
+                      const base = previewMatrix.get(emp.cod_empresa)?.get(cc.cod_centro_custo) ?? 0;
+                      return s + (valueOverrides.has(key) ? valueOverrides.get(key)! : base);
+                    }, 0);
                     return (
                       <TableRow
                         key={emp.cod_empresa}
@@ -1126,13 +1241,37 @@ function RateiosGeraisPage() {
                             </Badge>
                           )}
                         </TableCell>
-                        {selectedCCsList.map((cc) => (
-                          <TableCell key={cc.cod_centro_custo} className="text-right tabular-nums text-sm">
-                            {rowMap.has(cc.cod_centro_custo)
-                              ? brl(rowMap.get(cc.cod_centro_custo)!)
-                              : "—"}
-                          </TableCell>
-                        ))}
+                        {selectedCCsList.map((cc) => {
+                          const key = `${emp.cod_empresa}-${cc.cod_centro_custo}`;
+                          const base = previewMatrix.get(emp.cod_empresa)?.get(cc.cod_centro_custo);
+                          const hasOverride = valueOverrides.has(key);
+                          const displayVal = hasOverride ? valueOverrides.get(key)! : (base ?? 0);
+                          if (!base && !hasOverride) {
+                            return <TableCell key={cc.cod_centro_custo} className="text-right text-muted-foreground">—</TableCell>;
+                          }
+                          return (
+                            <TableCell key={cc.cod_centro_custo} className={cn("text-right tabular-nums text-sm p-1", hasOverride && "bg-amber-50")}>
+                              {editMode ? (
+                                <Input
+                                  type="number"
+                                  step={0.01}
+                                  value={displayVal}
+                                  onChange={(e) => {
+                                    const v = parseFloat(e.target.value) || 0;
+                                    setValueOverrides((prev) => {
+                                      const next = new Map(prev);
+                                      next.set(key, round2(v));
+                                      return next;
+                                    });
+                                  }}
+                                  className="h-7 w-24 text-right font-mono text-xs ml-auto"
+                                />
+                              ) : (
+                                <span className={cn(hasOverride && "text-amber-700 font-medium")}>{brl(displayVal)}</span>
+                              )}
+                            </TableCell>
+                          );
+                        })}
                         <TableCell className="text-right font-semibold tabular-nums text-sm">
                           {brl(rowTotal)}
                         </TableCell>
@@ -1147,7 +1286,9 @@ function RateiosGeraisPage() {
                     <td className="px-4 py-2 text-sm font-bold">Total</td>
                     {selectedCCsList.map((cc) => {
                       const colTotal = selectedEmpsList.reduce((s, emp) => {
-                        return s + (previewMatrix.get(emp.cod_empresa)?.get(cc.cod_centro_custo) ?? 0);
+                        const key = `${emp.cod_empresa}-${cc.cod_centro_custo}`;
+                        const base = previewMatrix.get(emp.cod_empresa)?.get(cc.cod_centro_custo) ?? 0;
+                        return s + (valueOverrides.has(key) ? valueOverrides.get(key)! : base);
                       }, 0);
                       return (
                         <td key={cc.cod_centro_custo} className="px-4 py-2 text-right font-bold text-sm tabular-nums">
@@ -1156,7 +1297,7 @@ function RateiosGeraisPage() {
                       );
                     })}
                     <td className="px-4 py-2 text-right font-bold text-sm tabular-nums text-primary">
-                      {brl(totalGeral)}
+                      {brl(effectiveTotalGeral)}
                     </td>
                   </tr>
                 </tfoot>
