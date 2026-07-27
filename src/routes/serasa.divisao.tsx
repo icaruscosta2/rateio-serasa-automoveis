@@ -117,10 +117,8 @@ function DivisaoPage() {
   });
   const [pcvInicio, setPcvInicio] = useState("");
   const [pcvFim, setPcvFim] = useState("");
-  const [file, setFile]         = useState<File | null>(null);
-  const [fileNegat, setFileNegat] = useState<File | null>(null);
-  const fileRef      = useRef<HTMLInputElement>(null);
-  const fileNegatRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   // Resultado do parse
   const [parsed,  setParsed]  = useState<ParseResult  | null>(null);
@@ -190,12 +188,6 @@ function DivisaoPage() {
     setPcvOverrides({});
   };
 
-  const handleFileNegat = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFileNegat(e.target.files?.[0] ?? null);
-    // Não reseta o parsed/summary — o usuário pode subir os dois arquivos em ordens diferentes
-    // e clicar em "Processar" quando ambos estiverem prontos.
-  };
-
   const handleParse = async () => {
     if (!file) return toast.error("Selecione o arquivo NF Power Curve");
     if (!mes)  return toast.error("Selecione o mês de referência");
@@ -203,21 +195,6 @@ function DivisaoPage() {
     try {
       const buf = await file.arrayBuffer();
       const result = parseRateioWorkbook(buf, pcvMap, undefined, gestoresMap);
-
-      // Se um arquivo separado de Negativações foi informado, extrai os CNPJs dele
-      if (fileNegat) {
-        try {
-          const bufNegat = await fileNegat.arrayBuffer();
-          const negatResult = parseRateioWorkbook(bufNegat);
-          // Mescla negativações do arquivo separado (prioridade) com eventuais do arquivo principal
-          for (const [cnpj, count] of negatResult.negativacoesPorCnpj) {
-            result.negativacoesPorCnpj.set(cnpj, (result.negativacoesPorCnpj.get(cnpj) ?? 0) + count);
-          }
-          if (negatResult.hasNegativacoes) result.hasNegativacoes = true;
-        } catch {
-          toast.warning("Não foi possível ler o arquivo de Negativações — verifique o formato.");
-        }
-      }
 
       setParsed(result);
       if (result.warnings.length) {
@@ -372,10 +349,8 @@ function DivisaoPage() {
       setParsed(null);
       setSummary(null);
       setFile(null);
-      setFileNegat(null);
       setNegatValorTotal(0);
-      if (fileRef.current)      fileRef.current.value = "";
-      if (fileNegatRef.current) fileNegatRef.current.value = "";
+      if (fileRef.current) fileRef.current.value = "";
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao salvar");
     } finally {
@@ -733,32 +708,6 @@ function DivisaoPage() {
               <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} />
             </div>
 
-            {/* NF Negativações */}
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5">
-                NF Negativações
-                <span className="text-muted-foreground font-normal text-xs">— opcional</span>
-              </Label>
-              <div
-                className={`border-2 border-dashed rounded-lg p-5 text-center cursor-pointer transition-colors ${
-                  fileNegat ? "border-green-500 bg-green-50/40" : "hover:border-primary"
-                }`}
-                onClick={() => fileNegatRef.current?.click()}
-              >
-                <Upload className={`h-6 w-6 mx-auto mb-1.5 ${fileNegat ? "text-green-600" : "text-muted-foreground"}`} />
-                {fileNegat ? (
-                  <p className="text-sm font-medium text-green-700 truncate px-1">{fileNegat.name}</p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Clique para selecionar</p>
-                )}
-              </div>
-              <input ref={fileNegatRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileNegat} />
-              {fileNegat && (
-                <p className="text-xs text-muted-foreground">
-                  Os CNPJs da coluna DOCUMENTO CREDOR serão extraídos deste arquivo.
-                </p>
-              )}
-            </div>
           </div>
 
           {/* Valor NF Negativações */}
@@ -776,12 +725,6 @@ function DivisaoPage() {
               onChange={(e) => setNegatValorTotal(Math.max(0, parseFloat(e.target.value) || 0))}
               className="max-w-xs"
             />
-            {parsed?.hasNegativacoes && (
-              <p className="text-xs text-green-700 font-medium">
-                ✓ {parsed.negativacoesPorCnpj.size} CNPJs com registros detectados
-                {fileNegat ? " (arquivo separado)" : " (arquivo principal)"}.
-              </p>
-            )}
           </div>
 
           <Button onClick={handleParse} disabled={!file || parsing} className="w-full">
@@ -898,7 +841,7 @@ function DivisaoPage() {
           <div className="flex justify-end gap-3">
             <Button
               variant="outline"
-              onClick={() => { setParsed(null); setSummary(null); setFile(null); setFileNegat(null); setNegatValorTotal(0); if (fileRef.current) fileRef.current.value = ""; if (fileNegatRef.current) fileNegatRef.current.value = ""; }}
+              onClick={() => { setParsed(null); setSummary(null); setFile(null); setNegatValorTotal(0); if (fileRef.current) fileRef.current.value = ""; }}
             >
               Recomeçar
             </Button>

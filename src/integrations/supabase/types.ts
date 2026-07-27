@@ -14,209 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
-      erp_mapeamento_cc: {
-        Row: {
-          id: string
-          coluna: string
-          descricao: string
-          cod_centro_custo: number | null
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          coluna: string
-          descricao: string
-          cod_centro_custo?: number | null
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          coluna?: string
-          descricao?: string
-          cod_centro_custo?: number | null
-          updated_at?: string
-        }
-        Relationships: []
-      }
       centro_custo: {
         Row: {
-          cod_centro_custo: number
-          descricao: string
           apelido: string | null
-          conta: string | null
-          tipo_conta: string | null
           ccusto_ativo: boolean
-        }
-        Insert: {
           cod_centro_custo: number
+          conta: string | null
           descricao: string
-          apelido?: string | null
-          conta?: string | null
-          tipo_conta?: string | null
-          ccusto_ativo?: boolean
-        }
-        Update: {
-          cod_centro_custo?: number
-          descricao?: string
-          apelido?: string | null
-          conta?: string | null
-          tipo_conta?: string | null
-          ccusto_ativo?: boolean
-        }
-        Relationships: []
-      }
-      conta_contabil: {
-        Row: {
-          cod_contabil: string
-          descricao: string
-          cod_reduzido: number | null
           tipo_conta: string | null
-          conta_ativa: boolean
         }
         Insert: {
-          cod_contabil: string
+          apelido?: string | null
+          ccusto_ativo?: boolean
+          cod_centro_custo: number
+          conta?: string | null
           descricao: string
-          cod_reduzido?: number | null
           tipo_conta?: string | null
-          conta_ativa?: boolean
         }
         Update: {
-          cod_contabil?: string
+          apelido?: string | null
+          ccusto_ativo?: boolean
+          cod_centro_custo?: number
+          conta?: string | null
           descricao?: string
-          cod_reduzido?: number | null
           tipo_conta?: string | null
-          conta_ativa?: boolean
-        }
-        Relationships: []
-      }
-      rateio_config_segmentos: {
-        Row: {
-          tipo: string
-          segmento: string
-          qtd_cnpj: number
-        }
-        Insert: {
-          tipo: string
-          segmento: string
-          qtd_cnpj?: number
-        }
-        Update: {
-          tipo?: string
-          segmento?: string
-          qtd_cnpj?: number
-        }
-        Relationships: []
-      }
-      gestores_logon: {
-        Row: {
-          id: string
-          logon: string
-          nome: string | null
-          segmento: string
-          ativo: boolean
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          logon: string
-          nome?: string | null
-          segmento?: string
-          ativo?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          logon?: string
-          nome?: string | null
-          segmento?: string
-          ativo?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      processos_serasa: {
-        Row: {
-          id: string
-          mes_referencia: string
-          etapa1_status: string
-          etapa1_resultado: Json | null
-          etapa1_pcv_inicio: string | null
-          etapa1_pcv_fim: string | null
-          etapa1_pct_cons_min: number
-          etapa1_pct_pc_fixo: number
-          etapa1_concluida_em: string | null
-          arquivo_storage_path: string | null
-          rateio_id: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          mes_referencia: string
-          etapa1_status?: string
-          etapa1_resultado?: Json | null
-          etapa1_pcv_inicio?: string | null
-          etapa1_pcv_fim?: string | null
-          etapa1_pct_cons_min?: number
-          etapa1_pct_pc_fixo?: number
-          etapa1_concluida_em?: string | null
-          arquivo_storage_path?: string | null
-          rateio_id?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          mes_referencia?: string
-          etapa1_status?: string
-          etapa1_resultado?: Json | null
-          etapa1_pcv_inicio?: string | null
-          etapa1_pcv_fim?: string | null
-          etapa1_pct_cons_min?: number
-          etapa1_pct_pc_fixo?: number
-          etapa1_concluida_em?: string | null
-          arquivo_storage_path?: string | null
-          rateio_id?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "processos_serasa_rateio_id_fkey"
-            columns: ["rateio_id"]
-            isOneToOne: false
-            referencedRelation: "rateios"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      pcv_usuarios: {
-        Row: {
-          id: string
-          user_id: string
-          segmento: string
-          ativo: boolean
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          segmento?: string
-          ativo?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          segmento?: string
-          ativo?: boolean
-          created_at?: string
-          updated_at?: string
         }
         Relationships: []
       }
@@ -277,6 +98,185 @@ export type Database = {
           segmento?: string | null
           tipo_negocio?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      conta_contabil: {
+        Row: {
+          cod_contabil: string
+          cod_reduzido: number | null
+          conta_ativa: boolean
+          descricao: string
+          tipo_conta: string | null
+        }
+        Insert: {
+          cod_contabil: string
+          cod_reduzido?: number | null
+          conta_ativa?: boolean
+          descricao: string
+          tipo_conta?: string | null
+        }
+        Update: {
+          cod_contabil?: string
+          cod_reduzido?: number | null
+          conta_ativa?: boolean
+          descricao?: string
+          tipo_conta?: string | null
+        }
+        Relationships: []
+      }
+      erp_mapeamento_cc: {
+        Row: {
+          cod_centro_custo: number | null
+          coluna: string
+          descricao: string
+          id: string
+          updated_at: string | null
+        }
+        Insert: {
+          cod_centro_custo?: number | null
+          coluna: string
+          descricao: string
+          id?: string
+          updated_at?: string | null
+        }
+        Update: {
+          cod_centro_custo?: number | null
+          coluna?: string
+          descricao?: string
+          id?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      gestores_logon: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          logon: string
+          nome: string | null
+          segmento: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          logon: string
+          nome?: string | null
+          segmento?: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          logon?: string
+          nome?: string | null
+          segmento?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      pcv_usuarios: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          segmento: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          segmento?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          segmento?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      processos_serasa: {
+        Row: {
+          arquivo_storage_path: string | null
+          created_at: string
+          etapa1_concluida_em: string | null
+          etapa1_pct_cons_min: number
+          etapa1_pct_pc_fixo: number
+          etapa1_pcv_fim: string | null
+          etapa1_pcv_inicio: string | null
+          etapa1_resultado: Json | null
+          etapa1_status: string
+          id: string
+          mes_referencia: string
+          rateio_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          arquivo_storage_path?: string | null
+          created_at?: string
+          etapa1_concluida_em?: string | null
+          etapa1_pct_cons_min?: number
+          etapa1_pct_pc_fixo?: number
+          etapa1_pcv_fim?: string | null
+          etapa1_pcv_inicio?: string | null
+          etapa1_resultado?: Json | null
+          etapa1_status?: string
+          id?: string
+          mes_referencia: string
+          rateio_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          arquivo_storage_path?: string | null
+          created_at?: string
+          etapa1_concluida_em?: string | null
+          etapa1_pct_cons_min?: number
+          etapa1_pct_pc_fixo?: number
+          etapa1_pcv_fim?: string | null
+          etapa1_pcv_inicio?: string | null
+          etapa1_resultado?: Json | null
+          etapa1_status?: string
+          id?: string
+          mes_referencia?: string
+          rateio_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "processos_serasa_rateio_id_fkey"
+            columns: ["rateio_id"]
+            isOneToOne: false
+            referencedRelation: "rateios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rateio_config_segmentos: {
+        Row: {
+          qtd_cnpj: number
+          segmento: string
+          tipo: string
+        }
+        Insert: {
+          qtd_cnpj?: number
+          segmento: string
+          tipo: string
+        }
+        Update: {
+          qtd_cnpj?: number
+          segmento?: string
+          tipo?: string
         }
         Relationships: []
       }
