@@ -38,10 +38,11 @@ import {
   Download,
   History,
   Pencil,
-  Percent,
+  Plus,
   RefreshCw,
   Search,
   Table2,
+  X,
 } from "lucide-react";
 import { brl } from "@/lib/format";
 import { toast } from "sonner";
@@ -72,7 +73,6 @@ interface CentroCusto {
   cod_centro_custo: number;
   descricao: string;
 }
-
 
 interface LinhaLancamento {
   cod_recebedor: number;
@@ -113,10 +113,7 @@ function formatDate(iso: string): string {
   return `${d}/${m}/${y}`;
 }
 
-/* Distribui cc3Val entre N empresas × M CCs usando aritmética inteira de centavos.
-   Garante sum == cc3Val exato. O "centavo sobrando" de cada coluna vai para empresas
-   diferentes (offset = índice da coluna) para evitar que a mesma empresa leve
-   sempre a desvantagem de arredondamento. */
+/* Distribui cc3Val entre N empresas × M CCs usando aritmética inteira de centavos. */
 function allocateRateio(
   cc3Val: number,
   distrib: Map<number, number>,
@@ -125,7 +122,6 @@ function allocateRateio(
   const totalCents = Math.round(cc3Val * 100);
   const ccs = Array.from(distrib.keys()).sort((a, b) => a - b);
 
-  // Passo 1: alocar centavos por coluna de CC (largest remainder)
   const rawCcCents = ccs.map((cc) => totalCents * (distrib.get(cc)! / 100));
   const floorCcCents = rawCcCents.map((x) => Math.floor(x));
   const ccRemainder = totalCents - floorCcCents.reduce((s, v) => s + v, 0);
@@ -135,7 +131,6 @@ function allocateRateio(
   const ccCents = [...floorCcCents];
   for (let i = 0; i < ccRemainder; i++) ccCents[ccByFrac[i]]++;
 
-  // Passo 2: dentro de cada coluna, distribuir entre N empresas
   const result = new Map<number, number[]>();
   ccs.forEach((cc, j) => {
     const colCents = ccCents[j];
@@ -156,6 +151,7 @@ function CollapseGroup({
   count,
   selectedCount,
   defaultOpen = true,
+  forceOpen,
   indent = false,
   children,
   onSelectAll,
@@ -165,12 +161,14 @@ function CollapseGroup({
   count: number;
   selectedCount: number;
   defaultOpen?: boolean;
+  forceOpen?: boolean;
   indent?: boolean;
   children: React.ReactNode;
   onSelectAll: () => void;
   onDeselectAll: () => void;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const open = forceOpen !== undefined ? forceOpen : internalOpen;
   const allSelected = selectedCount === count && count > 0;
   const someSelected = selectedCount > 0 && !allSelected;
 
@@ -181,7 +179,7 @@ function CollapseGroup({
           "flex items-center gap-2 px-3 py-2 cursor-pointer select-none",
           indent ? "bg-muted/20" : "bg-muted/50",
         )}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setInternalOpen((o) => !o)}
       >
         {open ? (
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -345,9 +343,23 @@ function RateiosGeraisPage() {
   const [nbsLinhas, setNbsLinhas] = useState<NbsRow[]>([]);
   const [nbsSelected, setNbsSelected] = useState(false);
 
-  /* ── Distribuição CC por contábil (auto-calculada, editável)
-        Map<cod_contabil, Map<cc_code, percentage>> ── */
+  /* ── Distribuição CC por contábil ── */
   const [ccDistrib, setCcDistrib] = useState<Map<string, Map<number, number>>>(new Map());
+
+  /* ── Overrides de valor CC=3 por contábil (editável) ── */
+  const [cc3ValOverrides, setCc3ValOverrides] = useState<Map<string, number>>(new Map());
+
+  /* ── Contábils adicionados manualmente (não vêm da nota NBS) ── */
+  const [addedContabils, setAddedContabils] = useState<string[]>([]);
+
+  /* ── Diálogo: adicionar CC a um contábil ── */
+  const [addCCContabil, setAddCCContabil] = useState<string | null>(null);
+  const [addCCCode, setAddCCCode] = useState("");
+
+  /* ── Diálogo: adicionar conta contábil ── */
+  const [addContabilOpen, setAddContabilOpen] = useState(false);
+  const [addContabilCod, setAddContabilCod] = useState("");
+  const [addContabilCc3Val, setAddContabilCc3Val] = useState("");
 
   /* ── Contabils expandidas na Tela 1 (padrão: todas fechadas) ── */
   const [expandedContabils, setExpandedContabils] = useState<Set<string>>(new Set());
@@ -439,6 +451,30 @@ function RateiosGeraisPage() {
       }));
   }, [empresasArr]);
 
+  /* ─────────── Grupos filtrados para Step 2 ─────────── */
+  const hasEmpFilter = !!(filterEmpNome.trim() || filterEmpCod.trim());
+
+  const filteredEmpsBySegBandeira = useMemo(() => {
+    if (!hasEmpFilter) return empresasBySegBandeira;
+    const nome = filterEmpNome.toLowerCase().trim();
+    const cod = filterEmpCod.trim();
+    return empresasBySegBandeira
+      .map(({ seg, bandeiras }) => ({
+        seg,
+        bandeiras: bandeiras
+          .map(({ band, emps }) => ({
+            band,
+            emps: emps.filter((e) => {
+              if (nome && !e.nome.toLowerCase().includes(nome)) return false;
+              if (cod && !String(e.cod_empresa).includes(cod)) return false;
+              return true;
+            }),
+          }))
+          .filter((b) => b.emps.length > 0),
+      }))
+      .filter((s) => s.bandeiras.length > 0);
+  }, [empresasBySegBandeira, filterEmpNome, filterEmpCod, hasEmpFilter]);
+
   /* ─────────── Derivados: nota NBS ─────────── */
   const notaInfo = useMemo(() => {
     if (nbsLinhas.length === 0) return null;
@@ -451,7 +487,6 @@ function RateiosGeraisPage() {
     };
   }, [nbsLinhas]);
 
-  // Agrupado por COD_CONTABIL (ordem de inserção)
   const contabilGroups = useMemo(() => {
     const m = new Map<string, NbsRow[]>();
     for (const r of nbsLinhas) {
@@ -470,7 +505,6 @@ function RateiosGeraisPage() {
     [nbsLinhas],
   );
 
-  // Contábeis elegíveis: têm pelo menos uma linha com CC=3
   const eligibleContabils = useMemo(() => {
     const result: string[] = [];
     for (const [c, rows] of contabilGroups) {
@@ -478,6 +512,23 @@ function RateiosGeraisPage() {
     }
     return result.sort();
   }, [contabilGroups]);
+
+  /* Todos os contábils para rateio: NBS elegíveis + adicionados manualmente */
+  const allContabilsForRateio = useMemo(() => {
+    const s = new Set([...eligibleContabils, ...addedContabils]);
+    return Array.from(s).sort();
+  }, [eligibleContabils, addedContabils]);
+
+  /* Helper: valor CC=3 efetivo (override ou original da nota) */
+  const getCC3Val = useCallback(
+    (contabil: string): number => {
+      if (cc3ValOverrides.has(contabil)) return cc3ValOverrides.get(contabil)!;
+      return Number(
+        contabilGroups.get(contabil)?.find((r) => r.cod_centro_custo === CC_FINANCEIRO)?.valor ?? 0,
+      );
+    },
+    [cc3ValOverrides, contabilGroups],
+  );
 
   /* ─────────── Busca NBS ─────────── */
   const handleBuscar = useCallback(() => {
@@ -491,6 +542,8 @@ function RateiosGeraisPage() {
     setNbsLinhas([]);
     setNbsSelected(false);
     setCcDistrib(new Map());
+    setCc3ValOverrides(new Map());
+    setAddedContabils([]);
     setStep((s) => Math.min(s, 1) as 1 | 2 | 3);
     const resultado = buscarNbsLancamento(empNum, lancNum);
     setSearching(false);
@@ -508,17 +561,20 @@ function RateiosGeraisPage() {
     for (const contabil of eligibleContabils) {
       const rows = contabilGroups.get(contabil)!;
       const others = rows.filter((r) => r.cod_centro_custo !== CC_FINANCEIRO);
-      if (others.length === 0) continue;
+
+      if (others.length === 0) {
+        // Contábil com apenas CC=3: inicializa vazio, usuário deve adicionar CCs
+        distrib.set(contabil, new Map());
+        continue;
+      }
 
       const totalOthers = others.reduce((s, r) => s + Number(r.valor), 0);
-      // Calcula proporção baseada nos valores originais da nota
       const pcts = others.map((r) => ({
         cc: r.cod_centro_custo,
         pct: totalOthers > 0
           ? round2((Number(r.valor) / totalOthers) * 100)
           : round2(100 / others.length),
       }));
-      // Corrige arredondamento no último item
       const sumPcts = pcts.reduce((s, x) => s + x.pct, 0);
       const diff = round2(100 - sumPcts);
       pcts[pcts.length - 1].pct = round2(pcts[pcts.length - 1].pct + diff);
@@ -529,6 +585,8 @@ function RateiosGeraisPage() {
     }
 
     setCcDistrib(distrib);
+    setCc3ValOverrides(new Map());
+    setAddedContabils([]);
     setNbsSelected(true);
     setStep((s) => Math.min(s, 1) as 1 | 2 | 3);
     setEditMode(false);
@@ -568,20 +626,10 @@ function RateiosGeraisPage() {
     [empresasArr, selectedEmps],
   );
 
-  const filteredEmpsList = useMemo(() => {
-    const nome = filterEmpNome.toLowerCase().trim();
-    const cod  = filterEmpCod.trim();
-    return empresasArr.filter((e) => {
-      if (nome && !e.nome.toLowerCase().includes(nome)) return false;
-      if (cod  && !String(e.cod_empresa).includes(cod)) return false;
-      return true;
-    });
-  }, [empresasArr, filterEmpNome, filterEmpCod]);
-
   /* ─────────── Validação para prévia ─────────── */
   const distribOk =
-    eligibleContabils.length > 0 &&
-    eligibleContabils.every((c) => {
+    allContabilsForRateio.length > 0 &&
+    allContabilsForRateio.every((c) => {
       const m = ccDistrib.get(c);
       if (!m || m.size === 0) return false;
       const sum = Array.from(m.values()).reduce((s, v) => s + v, 0);
@@ -596,11 +644,10 @@ function RateiosGeraisPage() {
   const matrizData = useMemo(() => {
     if (!canPreview || step !== 3) return [];
     const n = selectedEmpsList.length;
-    return eligibleContabils.map((contabil) => {
-      const distrib = ccDistrib.get(contabil)!;
-      const cc3Val = Number(
-        contabilGroups.get(contabil)!.find((r) => r.cod_centro_custo === CC_FINANCEIRO)?.valor ?? 0,
-      );
+    return allContabilsForRateio.map((contabil) => {
+      const distrib = ccDistrib.get(contabil);
+      if (!distrib || distrib.size === 0) return null;
+      const cc3Val = getCC3Val(contabil);
       const ccs = Array.from(distrib.keys()).sort((a, b) => a - b);
       const allocation = allocateRateio(cc3Val, distrib, n);
       const rows = selectedEmpsList.map((emp, empIdx) => {
@@ -617,20 +664,22 @@ function RateiosGeraisPage() {
       }
       const matrizTotal = round2(rows.reduce((s, r) => s + r.rowTotal, 0));
       return { contabil, cc3Val, ccs, rows, colTotals, matrizTotal };
-    });
-  }, [canPreview, step, eligibleContabils, ccDistrib, contabilGroups, selectedEmpsList]);
+    }).filter(Boolean) as NonNullable<ReturnType<typeof allocateRateio>> extends Map<number, number[]> ? never : {
+      contabil: string; cc3Val: number; ccs: number[];
+      rows: { empresa: Empresa; cells: Map<number, number>; rowTotal: number }[];
+      colTotals: Map<number, number>; matrizTotal: number;
+    }[];
+  }, [canPreview, step, allContabilsForRateio, ccDistrib, getCC3Val, selectedEmpsList]);
 
   /* ─────────── Linhas geradas ─────────── */
   const linhas = useMemo<LinhaLancamento[]>(() => {
     if (!canPreview || step !== 3 || !notaInfo) return [];
     const result: LinhaLancamento[] = [];
 
-    for (const contabil of eligibleContabils) {
+    for (const contabil of allContabilsForRateio) {
       const distrib = ccDistrib.get(contabil);
-      if (!distrib) continue;
-      const cc3Val = Number(
-        contabilGroups.get(contabil)!.find((r) => r.cod_centro_custo === CC_FINANCEIRO)?.valor ?? 0,
-      );
+      if (!distrib || distrib.size === 0) continue;
+      const cc3Val = getCC3Val(contabil);
 
       const allocation = allocateRateio(cc3Val, distrib, selectedEmpsList.length);
       for (let empIdx = 0; empIdx < selectedEmpsList.length; empIdx++) {
@@ -655,14 +704,8 @@ function RateiosGeraisPage() {
     }
     return result;
   }, [
-    canPreview,
-    step,
-    notaInfo,
-    eligibleContabils,
-    ccDistrib,
-    contabilGroups,
-    selectedEmpsList,
-    empresasMap,
+    canPreview, step, notaInfo, allContabilsForRateio,
+    ccDistrib, getCC3Val, selectedEmpsList, empresasMap,
   ]);
 
   const totalGeral = linhas.reduce((s, l) => s + l.valor, 0);
@@ -919,7 +962,7 @@ function RateiosGeraisPage() {
                     </div>
                   </div>
 
-                  {/* Tabela de linhas agrupada por contábil — colapsável */}
+                  {/* Tabela de linhas agrupada por contábil */}
                   <div className="rounded-md border overflow-auto">
                     <Table>
                       <TableHeader>
@@ -929,6 +972,7 @@ function RateiosGeraisPage() {
                           <TableHead className="w-20 text-center">CC</TableHead>
                           <TableHead>Descrição CC</TableHead>
                           <TableHead className="text-right">Valor</TableHead>
+                          <TableHead className="text-right text-blue-700">Valor Rateio</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -936,6 +980,9 @@ function RateiosGeraisPage() {
                           const conta = contasMap.get(contabil);
                           const rowTotal = rows.reduce((s, r) => s + Number(r.valor), 0);
                           const hasFinanceiro = rows.some((r) => r.cod_centro_custo === CC_FINANCEIRO);
+                          const cc3ValRow = rows
+                            .filter((r) => r.cod_centro_custo === CC_FINANCEIRO)
+                            .reduce((s, r) => s + Number(r.valor), 0);
                           const isOpen = expandedContabils.has(contabil);
                           const toggleContabil = () =>
                             setExpandedContabils((prev) => {
@@ -965,12 +1012,15 @@ function RateiosGeraisPage() {
                                     </Badge>
                                   )}
                                 </TableCell>
-                                <TableCell />
-                                <TableCell className="text-xs text-muted-foreground py-2">
+                                <TableCell className="text-xs text-muted-foreground py-2 text-center">
                                   {rows.length} CC{rows.length !== 1 ? "s" : ""}
                                 </TableCell>
+                                <TableCell />
                                 <TableCell className="text-right font-semibold font-mono text-sm tabular-nums py-2">
                                   {brl(rowTotal)}
+                                </TableCell>
+                                <TableCell className="text-right font-semibold font-mono text-sm tabular-nums py-2 text-blue-700">
+                                  {hasFinanceiro ? brl(cc3ValRow) : "—"}
                                 </TableCell>
                               </TableRow>
                               {isOpen && rows.map((r) => (
@@ -995,6 +1045,9 @@ function RateiosGeraisPage() {
                                   </TableCell>
                                   <TableCell className="text-right font-mono text-sm tabular-nums">
                                     {brl(Number(r.valor))}
+                                  </TableCell>
+                                  <TableCell className="text-right font-mono text-sm tabular-nums text-blue-700">
+                                    {r.cod_centro_custo === CC_FINANCEIRO ? brl(Number(r.valor)) : ""}
                                   </TableCell>
                                 </TableRow>
                               ))}
@@ -1038,19 +1091,22 @@ function RateiosGeraisPage() {
                         </p>
                       </div>
 
-                      {eligibleContabils.map((contabil) => {
+                      {allContabilsForRateio.filter((c) => ccDistrib.has(c)).map((contabil) => {
                         const conta = contasMap.get(contabil);
-                        const cc3Val = Number(
+                        const cc3ValOriginal = Number(
                           contabilGroups
-                            .get(contabil)!
-                            .find((r) => r.cod_centro_custo === CC_FINANCEIRO)?.valor ?? 0,
+                            .get(contabil)
+                            ?.find((r) => r.cod_centro_custo === CC_FINANCEIRO)?.valor ?? 0,
                         );
+                        const cc3ValEffective = getCC3Val(contabil);
                         const distrib = ccDistrib.get(contabil) ?? new Map<number, number>();
                         const distribSum = Array.from(distrib.values()).reduce((s, v) => s + v, 0);
                         const distribOkLocal = Math.abs(distribSum - 100) < 0.01;
+                        const isAdded = addedContabils.includes(contabil);
 
                         return (
                           <div key={contabil} className="rounded-md border p-4 space-y-3">
+                            {/* Header do card */}
                             <div className="flex items-start justify-between gap-2">
                               <div>
                                 <span className="font-mono font-semibold">{contabil}</span>
@@ -1059,65 +1115,181 @@ function RateiosGeraisPage() {
                                     {conta.descricao}
                                   </span>
                                 )}
+                                {isAdded && (
+                                  <Badge variant="secondary" className="ml-2 text-[10px]">
+                                    Adicionado
+                                  </Badge>
+                                )}
                               </div>
-                              <div className="text-right shrink-0">
-                                <span className="text-xs text-muted-foreground">Valor CC={CC_FINANCEIRO}: </span>
-                                <span className="font-semibold font-mono text-sm">{brl(cc3Val)}</span>
-                              </div>
-                            </div>
-
-                            <div className="space-y-2">
-                              {Array.from(distrib.entries()).map(([cc, pct]) => {
-                                const ccDesc = centrosMap.get(cc);
-                                return (
-                                  <div key={cc} className="flex items-center gap-3">
-                                    <span className="font-mono text-sm w-8 shrink-0 text-right text-muted-foreground">
-                                      {cc}
-                                    </span>
-                                    <span className="text-sm flex-1 truncate">
-                                      {ccDesc?.descricao ?? "—"}
-                                    </span>
-                                    <div className="flex items-center gap-1 shrink-0">
-                                      <Input
-                                        type="number"
-                                        min={0}
-                                        max={100}
-                                        step={0.001}
-                                        value={pct}
-                                        onChange={(e) => {
-                                          const v = Number(e.target.value) || 0;
-                                          setCcDistrib((prev) => {
+                              <div className="flex items-center gap-2 shrink-0">
+                                <div className="text-right">
+                                  <span className="text-xs text-muted-foreground">
+                                    Valor CC={CC_FINANCEIRO}:
+                                  </span>
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      step={0.01}
+                                      value={cc3ValEffective}
+                                      onChange={(e) => {
+                                        const v = parseFloat(e.target.value) || 0;
+                                        setCc3ValOverrides((prev) => new Map(prev).set(contabil, round2(v)));
+                                        setStep((s) => Math.min(s, 1) as 1 | 2 | 3);
+                                      }}
+                                      className="w-28 h-7 font-mono text-sm text-right"
+                                    />
+                                    {cc3ValOverrides.has(contabil) && cc3ValOriginal > 0 && (
+                                      <button
+                                        type="button"
+                                        title="Restaurar valor original"
+                                        className="text-xs text-muted-foreground hover:text-foreground"
+                                        onClick={() => {
+                                          setCc3ValOverrides((prev) => {
                                             const next = new Map(prev);
-                                            const m = new Map(next.get(contabil) ?? new Map());
-                                            m.set(cc, v);
-                                            next.set(contabil, m);
+                                            next.delete(contabil);
                                             return next;
                                           });
                                           setStep((s) => Math.min(s, 1) as 1 | 2 | 3);
                                         }}
-                                        className="w-24 h-8 font-mono text-sm text-right"
-                                      />
-                                      <span className="text-sm text-muted-foreground w-4">%</span>
-                                    </div>
+                                      >
+                                        <RefreshCw className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
                                   </div>
-                                );
-                              })}
+                                </div>
+                                {isAdded && (
+                                  <button
+                                    type="button"
+                                    title="Remover conta contábil"
+                                    className="text-muted-foreground/40 hover:text-destructive transition-colors"
+                                    onClick={() => {
+                                      setAddedContabils((prev) => prev.filter((c) => c !== contabil));
+                                      setCcDistrib((prev) => {
+                                        const next = new Map(prev);
+                                        next.delete(contabil);
+                                        return next;
+                                      });
+                                      setCc3ValOverrides((prev) => {
+                                        const next = new Map(prev);
+                                        next.delete(contabil);
+                                        return next;
+                                      });
+                                      setStep((s) => Math.min(s, 1) as 1 | 2 | 3);
+                                    }}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
-                            <div
-                              className={cn(
-                                "flex items-center justify-between rounded px-3 py-1.5 text-xs font-medium border",
-                                distribOkLocal
-                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                  : "bg-red-50 text-red-700 border-red-200",
-                              )}
-                            >
-                              <span>Total</span>
-                              <span className="font-mono">{round2(distribSum).toFixed(3)}%</span>
+                            {/* Linhas de CC */}
+                            {distrib.size === 0 ? (
+                              <p className="text-xs text-amber-600 italic">
+                                Nenhum CC de destino configurado. Adicione ao menos um CC abaixo.
+                              </p>
+                            ) : (
+                              <div className="space-y-2">
+                                {Array.from(distrib.entries()).map(([cc, pct]) => {
+                                  const ccDesc = centrosMap.get(cc);
+                                  return (
+                                    <div key={cc} className="flex items-center gap-3">
+                                      <span className="font-mono text-sm w-8 shrink-0 text-right text-muted-foreground">
+                                        {cc}
+                                      </span>
+                                      <span className="text-sm flex-1 truncate">
+                                        {ccDesc?.descricao ?? "—"}
+                                      </span>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <Input
+                                          type="number"
+                                          min={0}
+                                          max={100}
+                                          step={0.001}
+                                          value={pct}
+                                          onChange={(e) => {
+                                            const v = Number(e.target.value) || 0;
+                                            setCcDistrib((prev) => {
+                                              const next = new Map(prev);
+                                              const m = new Map(next.get(contabil) ?? new Map());
+                                              m.set(cc, v);
+                                              next.set(contabil, m);
+                                              return next;
+                                            });
+                                            setStep((s) => Math.min(s, 1) as 1 | 2 | 3);
+                                          }}
+                                          className="w-24 h-8 font-mono text-sm text-right"
+                                        />
+                                        <span className="text-sm text-muted-foreground w-4">%</span>
+                                        <button
+                                          type="button"
+                                          title="Remover CC"
+                                          className="text-muted-foreground/40 hover:text-destructive transition-colors ml-1"
+                                          onClick={() => {
+                                            setCcDistrib((prev) => {
+                                              const next = new Map(prev);
+                                              const m = new Map(next.get(contabil) ?? new Map());
+                                              m.delete(cc);
+                                              next.set(contabil, m);
+                                              return next;
+                                            });
+                                            setStep((s) => Math.min(s, 1) as 1 | 2 | 3);
+                                          }}
+                                        >
+                                          <X className="h-3.5 w-3.5" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Total % + botão adicionar CC */}
+                            <div className="flex items-center gap-2">
+                              <div
+                                className={cn(
+                                  "flex-1 flex items-center justify-between rounded px-3 py-1.5 text-xs font-medium border",
+                                  distribOkLocal
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    : "bg-red-50 text-red-700 border-red-200",
+                                )}
+                              >
+                                <span>Total</span>
+                                <span className="font-mono">{round2(distribSum).toFixed(3)}%</span>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 gap-1 text-xs shrink-0"
+                                onClick={() => {
+                                  setAddCCContabil(contabil);
+                                  setAddCCCode("");
+                                }}
+                              >
+                                <Plus className="h-3 w-3" />
+                                CC
+                              </Button>
                             </div>
                           </div>
                         );
                       })}
+
+                      {/* Botão adicionar conta contábil */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => {
+                          setAddContabilCod("");
+                          setAddContabilCc3Val("");
+                          setAddContabilOpen(true);
+                        }}
+                      >
+                        <Plus className="h-4 w-4" />
+                        Adicionar Conta Contábil
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -1161,6 +1333,7 @@ function RateiosGeraisPage() {
                 <p className="text-sm text-muted-foreground p-6">Carregando…</p>
               ) : (
                 <>
+                  {/* Filtros */}
                   <div className="flex gap-2 px-4 pt-3 pb-2 border-b">
                     <div className="relative flex-1">
                       <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
@@ -1177,7 +1350,7 @@ function RateiosGeraisPage() {
                       onChange={(e) => setFilterEmpCod(e.target.value)}
                       className="w-24 h-8 text-sm font-mono"
                     />
-                    {(filterEmpNome || filterEmpCod) && (
+                    {hasEmpFilter && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1189,26 +1362,63 @@ function RateiosGeraisPage() {
                     )}
                   </div>
 
-                  <div className="max-h-64 overflow-y-auto divide-y">
-                    {filteredEmpsList.length === 0 ? (
-                      <p className="text-sm text-muted-foreground px-4 py-3">Nenhuma empresa encontrada.</p>
+                  {/* Grupos Segmento → Bandeira */}
+                  <div className="max-h-96 overflow-y-auto p-3 space-y-2">
+                    {filteredEmpsBySegBandeira.length === 0 ? (
+                      <p className="text-sm text-muted-foreground px-1 py-2">Nenhuma empresa encontrada.</p>
                     ) : (
-                      filteredEmpsList.map((emp) => {
-                        const isSelected = selectedEmps.has(emp.cod_empresa);
+                      filteredEmpsBySegBandeira.map(({ seg, bandeiras }) => {
+                        const segEmps = bandeiras.flatMap((b) => b.emps);
+                        const segSelected = segEmps.filter((e) => selectedEmps.has(e.cod_empresa)).length;
                         return (
-                          <div
-                            key={emp.cod_empresa}
-                            className="flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-muted/40 transition-colors"
-                            onClick={() => toggleEmp(emp.cod_empresa)}
+                          <CollapseGroup
+                            key={seg}
+                            title={seg}
+                            count={segEmps.length}
+                            selectedCount={segSelected}
+                            defaultOpen={false}
+                            forceOpen={hasEmpFilter ? true : undefined}
+                            onSelectAll={() => selectAllEmps(segEmps.map((e) => e.cod_empresa))}
+                            onDeselectAll={() => deselectAllEmps(segEmps.map((e) => e.cod_empresa))}
                           >
-                            <Checkbox
-                              checked={isSelected}
-                              onCheckedChange={() => toggleEmp(emp.cod_empresa)}
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                            <span className="text-sm flex-1">{emp.nome}</span>
-                            <span className="text-xs text-muted-foreground font-mono shrink-0">{emp.cod_empresa}</span>
-                          </div>
+                            <div className="p-2 space-y-1.5">
+                              {bandeiras.map(({ band, emps }) => {
+                                const bandSelected = emps.filter((e) => selectedEmps.has(e.cod_empresa)).length;
+                                return (
+                                  <CollapseGroup
+                                    key={band}
+                                    title={band}
+                                    count={emps.length}
+                                    selectedCount={bandSelected}
+                                    defaultOpen={false}
+                                    forceOpen={hasEmpFilter ? true : undefined}
+                                    indent
+                                    onSelectAll={() => selectAllEmps(emps.map((e) => e.cod_empresa))}
+                                    onDeselectAll={() => deselectAllEmps(emps.map((e) => e.cod_empresa))}
+                                  >
+                                    {emps.map((emp) => {
+                                      const isSelected = selectedEmps.has(emp.cod_empresa);
+                                      return (
+                                        <div
+                                          key={emp.cod_empresa}
+                                          className="flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-muted/40 transition-colors"
+                                          onClick={() => toggleEmp(emp.cod_empresa)}
+                                        >
+                                          <Checkbox
+                                            checked={isSelected}
+                                            onCheckedChange={() => toggleEmp(emp.cod_empresa)}
+                                            onClick={(e) => e.stopPropagation()}
+                                          />
+                                          <span className="text-sm flex-1">{emp.nome}</span>
+                                          <span className="text-xs text-muted-foreground font-mono shrink-0">{emp.cod_empresa}</span>
+                                        </div>
+                                      );
+                                    })}
+                                  </CollapseGroup>
+                                );
+                              })}
+                            </div>
+                          </CollapseGroup>
                         );
                       })
                     )}
@@ -1277,9 +1487,12 @@ function RateiosGeraisPage() {
             <CardContent className={previewMode === "matrix" ? "space-y-8" : "p-0"}>
               {previewMode === "matrix" ? (
                 /* ── MATRIX VIEW ── */
-                matrizData.map(({ contabil, cc3Val, ccs, rows }) => {
+                (matrizData as Array<{
+                  contabil: string; cc3Val: number; ccs: number[];
+                  rows: { empresa: Empresa; cells: Map<number, number>; rowTotal: number }[];
+                  colTotals: Map<number, number>; matrizTotal: number;
+                }>).map(({ contabil, cc3Val, ccs, rows }) => {
                   const conta = contasMap.get(contabil);
-                  // Apply overrides to get effective values for totals
                   const effectiveRows = rows.map(({ empresa, cells }) => {
                     const effectiveCells = new Map<number, number>();
                     for (const cc of ccs) {
@@ -1470,6 +1683,133 @@ function RateiosGeraisPage() {
           </div>
         </>
       )}
+
+      {/* ══════════════════════════════════
+          DIÁLOGO: Adicionar CC
+      ══════════════════════════════════ */}
+      <Dialog open={addCCContabil !== null} onOpenChange={(open) => !open && setAddCCContabil(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Adicionar Centro de Custo</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <p className="text-xs text-muted-foreground">
+              Conta: <span className="font-mono font-medium">{addCCContabil}</span>
+            </p>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Centro de Custo</label>
+              <select
+                value={addCCCode}
+                onChange={(e) => setAddCCCode(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">Selecione…</option>
+                {centrosTodos
+                  .filter(
+                    (cc) =>
+                      cc.cod_centro_custo !== CC_FINANCEIRO &&
+                      !(ccDistrib.get(addCCContabil ?? "")?.has(cc.cod_centro_custo) ?? false),
+                  )
+                  .map((cc) => (
+                    <option key={cc.cod_centro_custo} value={cc.cod_centro_custo}>
+                      {cc.cod_centro_custo} — {cc.descricao}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddCCContabil(null)}>Cancelar</Button>
+            <Button
+              disabled={!addCCCode}
+              onClick={() => {
+                if (!addCCCode || !addCCContabil) return;
+                const cc = Number(addCCCode);
+                setCcDistrib((prev) => {
+                  const next = new Map(prev);
+                  const m = new Map(next.get(addCCContabil) ?? new Map());
+                  if (!m.has(cc)) {
+                    const currentSum = Array.from(m.values()).reduce((s, v) => s + v, 0);
+                    m.set(cc, Math.max(0, round2(100 - currentSum)));
+                  }
+                  next.set(addCCContabil, m);
+                  return next;
+                });
+                setAddCCContabil(null);
+                setAddCCCode("");
+                setStep((s) => Math.min(s, 1) as 1 | 2 | 3);
+              }}
+            >
+              Adicionar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════════════════════
+          DIÁLOGO: Adicionar Conta Contábil
+      ══════════════════════════════════ */}
+      <Dialog open={addContabilOpen} onOpenChange={setAddContabilOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Adicionar Conta Contábil</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Conta Contábil</label>
+              <select
+                value={addContabilCod}
+                onChange={(e) => setAddContabilCod(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">Selecione…</option>
+                {contas
+                  .filter((c) => !allContabilsForRateio.includes(c.cod_contabil))
+                  .map((c) => (
+                    <option key={c.cod_contabil} value={c.cod_contabil}>
+                      {c.cod_contabil} — {c.descricao}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">
+                Valor para Rateio (CC={CC_FINANCEIRO})
+              </label>
+              <Input
+                type="number"
+                min={0}
+                step={0.01}
+                placeholder="0,00"
+                value={addContabilCc3Val}
+                onChange={(e) => setAddContabilCc3Val(e.target.value)}
+                className="font-mono"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddContabilOpen(false)}>Cancelar</Button>
+            <Button
+              disabled={!addContabilCod}
+              onClick={() => {
+                if (!addContabilCod) return toast.error("Selecione uma conta contábil.");
+                const val = parseFloat(addContabilCc3Val) || 0;
+                if (val <= 0) return toast.error("Informe o valor para rateio.");
+                setAddedContabils((prev) => [...prev, addContabilCod]);
+                setCc3ValOverrides((prev) => new Map(prev).set(addContabilCod, round2(val)));
+                setCcDistrib((prev) => new Map(prev).set(addContabilCod, new Map()));
+                setAddContabilOpen(false);
+                setAddContabilCod("");
+                setAddContabilCc3Val("");
+                setStep((s) => Math.min(s, 1) as 1 | 2 | 3);
+                toast.success("Conta contábil adicionada.");
+              }}
+            >
+              Adicionar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );
