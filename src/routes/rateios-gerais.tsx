@@ -345,6 +345,7 @@ function RateiosGeraisPage() {
   const [nrProcesso, setNrProcesso] = useState("");
 
   /* ── Busca NBS ── */
+  const [searchEmpCod, setSearchEmpCod] = useState("");
   const [searchNota, setSearchNota] = useState("");
   const [searching, setSearching] = useState(false);
   const [nbsLinhas, setNbsLinhas] = useState<NbsRow[]>([]);
@@ -552,14 +553,16 @@ function RateiosGeraisPage() {
     setCc3ValOverrides(new Map());
     setAddedContabils([]);
     setStep((s) => Math.min(s, 1) as 1 | 2 | 3);
-    const resultado = buscarNbsNota(notaNum);
+    let resultado = buscarNbsNota(notaNum);
+    const empNum = Number(searchEmpCod);
+    if (empNum) resultado = resultado.filter((r) => r.cod_empresa === empNum);
     setSearching(false);
     if (resultado.length === 0) {
       toast.error("Nota não encontrada.");
       return;
     }
     setNbsLinhas(resultado);
-  }, [searchNota]);
+  }, [searchNota, searchEmpCod]);
 
   /* ─────────── Selecionar nota → inicializa distribuição de CCs ─────────── */
   const handleSelecionar = useCallback(() => {
@@ -976,10 +979,20 @@ function RateiosGeraisPage() {
                 />
               </div>
 
-              {/* Campo de busca por número da nota */}
+              {/* Campos de busca */}
               <div className="flex flex-wrap gap-3 items-end">
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Nº Nota (8 dígitos)</label>
+                  <label className="text-sm font-medium">Cód. Empresa</label>
+                  <Input
+                    placeholder="Ex: 2"
+                    value={searchEmpCod}
+                    onChange={(e) => setSearchEmpCod(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleBuscar()}
+                    className="w-32 font-mono"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Nº Nota</label>
                   <Input
                     placeholder="Ex: 52817873"
                     value={searchNota}
