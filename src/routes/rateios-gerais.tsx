@@ -88,18 +88,26 @@ interface LinhaLancamento {
   cc_recebedor: number;
 }
 
+interface HistoricoEmpresa {
+  cod: number;
+  nome: string;
+  bandeira: string | null;
+  nr_nd: string;
+  valor: number;
+}
+
 interface HistoricoEntry {
   id: string;
   data: string;
   numero_nota: number;
   controle: string;
-  nr_nd: string;
   nr_processo: string;
   pagadora: string;
   bandeira: string | null;
   total_empresas: number;
   valor_total: number;
   contabils: { cod: string; valor: number }[];
+  empresas: HistoricoEmpresa[];
 }
 
 const HISTORICO_KEY = "rg_historico";
@@ -347,6 +355,9 @@ function RateiosGeraisPage() {
   /* ── Busca NBS ── */
   const [searchEmpCod, setSearchEmpCod] = useState("");
   const [searchNota, setSearchNota] = useState("");
+
+  /* ── Histórico expandido ── */
+  const [expandedHistorico, setExpandedHistorico] = useState<Set<string>>(new Set());
   const [searching, setSearching] = useState(false);
   const [nbsLinhas, setNbsLinhas] = useState<NbsRow[]>([]);
   const [nbsSelected, setNbsSelected] = useState(false);
@@ -541,9 +552,10 @@ function RateiosGeraisPage() {
 
   /* ─────────── Busca NBS ─────────── */
   const handleBuscar = useCallback(() => {
+    const empNum = Number(searchEmpCod);
     const notaNum = Number(searchNota);
-    if (!notaNum) {
-      toast.error("Informe o número da nota.");
+    if (!empNum || !notaNum) {
+      toast.error("Informe a empresa e o número da nota.");
       return;
     }
     setSearching(true);
@@ -553,16 +565,14 @@ function RateiosGeraisPage() {
     setCc3ValOverrides(new Map());
     setAddedContabils([]);
     setStep((s) => Math.min(s, 1) as 1 | 2 | 3);
-    let resultado = buscarNbsNota(notaNum);
-    const empNum = Number(searchEmpCod);
-    if (empNum) resultado = resultado.filter((r) => r.cod_empresa === empNum);
+    const resultado = buscarNbsNota(notaNum).filter((r) => r.cod_empresa === empNum);
     setSearching(false);
     if (resultado.length === 0) {
-      toast.error("Nota não encontrada.");
+      toast.error("Nota não encontrada para esta empresa.");
       return;
     }
     setNbsLinhas(resultado);
-  }, [searchNota, searchEmpCod]);
+  }, [searchEmpCod, searchNota]);
 
   /* ─────────── Selecionar nota → inicializa distribuição de CCs ─────────── */
   const handleSelecionar = useCallback(() => {
@@ -762,7 +772,6 @@ function RateiosGeraisPage() {
       XLSX.utils.book_append_sheet(wb, ws, "LANÇAMENTOS NBS");
       XLSX.writeFile(wb, `LANCAMENTOS_NBS_GERAL_${todayIso().slice(0, 7)}.xlsx`);
 
-      const ndNum = Math.floor(10000000 + Math.random() * 89999999);
       const contabilTotals: { cod: string; valor: number }[] = allContabilsForRateio
         .map((c) => {
           const distrib = ccDistrib.get(c);
@@ -770,19 +779,36 @@ function RateiosGeraisPage() {
           return { cod: c, valor: round2(getCC3Val(c)) };
         })
         .filter(Boolean) as { cod: string; valor: number }[];
+      const empresasHistorico: HistoricoEmpresa[] = selectedEmpsList.map((emp) => {
+        const valorEmp = round2(
+          linhas
+            .filter((l) => l.cod_pagador === emp.cod_empresa)
+            .reduce((s, l) => {
+              const key = `${l.cod_pagador}-${l.cod_conta_contabil}-${l.cod_centro_custo}`;
+              return s + (valueOverrides.has(key) ? valueOverrides.get(key)! : l.valor);
+            }, 0),
+        );
+        return {
+          cod: emp.cod_empresa,
+          nome: emp.nome,
+          bandeira: emp.bandeira ?? null,
+          nr_nd: String(Math.floor(10000000 + Math.random() * 89999999)),
+          valor: valorEmp,
+        };
+      });
       const pagadoraEmp = empresasMap.get(notaInfo?.cod_empresa ?? 0);
       const entry: HistoricoEntry = {
         id: crypto.randomUUID(),
         data: todayIso(),
         numero_nota: notaInfo?.numero_nota ?? 0,
         controle: notaInfo?.controle ?? "",
-        nr_nd: String(ndNum),
         nr_processo: nrProcesso,
         pagadora: pagadoraEmp?.nome ?? String(notaInfo?.cod_empresa ?? ""),
         bandeira: pagadoraEmp?.bandeira ?? null,
         total_empresas: selectedEmpsList.length,
         valor_total: round2(effectiveTotalGeral),
         contabils: contabilTotals,
+        empresas: empresasHistorico,
       };
       const updated = [entry, ...historico].slice(0, 50);
       localStorage.setItem(HISTORICO_KEY, JSON.stringify(updated));
@@ -836,79 +862,122 @@ function RateiosGeraisPage() {
           ABA: Histórico
       ══════════════════════════════════ */}
       {activeTab === "historico" && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {historico.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
               Nenhum rateio exportado ainda.
             </p>
           ) : (
-            historico.map((h) => (
-              <Card key={h.id}>
-                <CardContent className="pt-4 pb-3 px-4 space-y-3">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-0.5">
-                      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-                        <span>
-                          <span className="text-muted-foreground">Nota: </span>
-                          <span className="font-mono font-semibold">{h.numero_nota}</span>
-                        </span>
-                        <span>
-                          <span className="text-muted-foreground">Controle: </span>
-                          <span className="font-mono text-xs">{h.controle}</span>
-                        </span>
-                        <span>
-                          <span className="text-muted-foreground">ND: </span>
-                          <span className="font-mono font-semibold">{h.nr_nd || "—"}</span>
-                        </span>
-                        {h.nr_processo && (
-                          <span>
-                            <span className="text-muted-foreground">Processo: </span>
-                            <span className="font-mono text-xs">{h.nr_processo}</span>
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm mt-1">
-                        <span className="font-medium">{h.pagadora}</span>
-                        {h.bandeira && (
-                          <Badge variant="secondary" className="text-[10px] h-4">{h.bandeira}</Badge>
-                        )}
-                        <span className="text-muted-foreground text-xs">
-                          {new Date(h.data + "T12:00:00").toLocaleDateString("pt-BR")}
-                        </span>
-                        <span className="text-muted-foreground text-xs">
-                          {h.total_empresas} empresa{h.total_empresas !== 1 ? "s" : ""}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="font-semibold tabular-nums">{brl(h.valor_total)}</span>
-                      <button
-                        type="button"
-                        title="Remover"
-                        className="text-muted-foreground/40 hover:text-destructive transition-colors"
-                        onClick={() => {
-                          const updated = historico.filter((x) => x.id !== h.id);
-                          localStorage.setItem(HISTORICO_KEY, JSON.stringify(updated));
-                          setHistorico(updated);
-                        }}
-                      >
-                        <X className="h-4 w-4" />
+            historico.map((h) => {
+              const expanded = expandedHistorico.has(h.id);
+              const toggleExpand = () =>
+                setExpandedHistorico((prev) => {
+                  const next = new Set(prev);
+                  next.has(h.id) ? next.delete(h.id) : next.add(h.id);
+                  return next;
+                });
+              return (
+                <Card key={h.id}>
+                  <CardContent className="pt-3 pb-3 px-4 space-y-2">
+                    {/* cabeçalho */}
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={toggleExpand} className="shrink-0 text-muted-foreground hover:text-foreground">
+                        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       </button>
-                    </div>
-                  </div>
-                  {h.contabils && h.contabils.length > 0 && (
-                    <div className="flex flex-wrap gap-2 border-t pt-2">
-                      {h.contabils.map((c) => (
-                        <div key={c.cod} className="rounded-md bg-muted/50 px-2 py-1 text-xs">
-                          <span className="font-mono text-muted-foreground">{c.cod}</span>
-                          <span className="ml-1 font-semibold tabular-nums">{brl(c.valor)}</span>
+                      <div className="flex-1 min-w-0 cursor-pointer space-y-0.5" onClick={toggleExpand}>
+                        <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+                          <span>
+                            <span className="text-muted-foreground">Nota: </span>
+                            <span className="font-mono font-semibold">{h.numero_nota}</span>
+                          </span>
+                          <span>
+                            <span className="text-muted-foreground">Controle: </span>
+                            <span className="font-mono text-xs">{h.controle}</span>
+                          </span>
+                          {h.nr_processo && (
+                            <span>
+                              <span className="text-muted-foreground">Processo: </span>
+                              <span className="font-mono text-xs">{h.nr_processo}</span>
+                            </span>
+                          )}
+                          <span className="text-muted-foreground text-xs">
+                            {new Date(h.data + "T12:00:00").toLocaleDateString("pt-BR")}
+                          </span>
                         </div>
-                      ))}
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 items-center">
+                          <span className="font-medium text-sm">{h.pagadora}</span>
+                          {h.bandeira && <Badge variant="secondary" className="text-[10px] h-4">{h.bandeira}</Badge>}
+                          <span className="text-xs text-muted-foreground">
+                            {h.total_empresas} empresa{h.total_empresas !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                        {h.contabils?.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-0.5">
+                            {h.contabils.map((c) => (
+                              <span key={c.cod} className="rounded bg-muted/60 px-1.5 py-0.5 text-[10px] font-mono">
+                                {c.cod} <span className="font-semibold">{brl(c.valor)}</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="font-semibold tabular-nums text-sm">{brl(h.valor_total)}</span>
+                        <button
+                          type="button"
+                          title="Remover"
+                          className="text-muted-foreground/40 hover:text-destructive transition-colors"
+                          onClick={() => {
+                            const updated = historico.filter((x) => x.id !== h.id);
+                            localStorage.setItem(HISTORICO_KEY, JSON.stringify(updated));
+                            setHistorico(updated);
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))
+
+                    {/* tabela por empresa */}
+                    {expanded && h.empresas?.length > 0 && (
+                      <div className="rounded-md border overflow-auto mt-1">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Empresa</TableHead>
+                              <TableHead>Bandeira</TableHead>
+                              <TableHead className="font-mono">Nº ND</TableHead>
+                              <TableHead className="text-right">Valor Rateado</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {h.empresas.map((e) => (
+                              <TableRow key={e.cod}>
+                                <TableCell className="text-sm">
+                                  <div>{e.nome}</div>
+                                  <div className="text-xs text-muted-foreground font-mono">{e.cod}</div>
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">{e.bandeira ?? "—"}</TableCell>
+                                <TableCell className="font-mono text-sm font-semibold">{e.nr_nd}</TableCell>
+                                <TableCell className="text-right font-mono text-sm tabular-nums font-semibold">{brl(e.valor)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                          <TableFooter>
+                            <TableRow>
+                              <TableCell colSpan={3} className="font-bold text-sm">Total</TableCell>
+                              <TableCell className="text-right font-bold font-mono text-sm tabular-nums text-primary">
+                                {brl(h.valor_total)}
+                              </TableCell>
+                            </TableRow>
+                          </TableFooter>
+                        </Table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })
           )}
         </div>
       )}
@@ -982,7 +1051,7 @@ function RateiosGeraisPage() {
               {/* Campos de busca */}
               <div className="flex flex-wrap gap-3 items-end">
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Cód. Empresa</label>
+                  <label className="text-sm font-medium">Cód. Empresa <span className="text-destructive">*</span></label>
                   <Input
                     placeholder="Ex: 2"
                     value={searchEmpCod}
@@ -992,7 +1061,7 @@ function RateiosGeraisPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Nº Nota</label>
+                  <label className="text-sm font-medium">Nº Nota <span className="text-destructive">*</span></label>
                   <Input
                     placeholder="Ex: 52817873"
                     value={searchNota}
