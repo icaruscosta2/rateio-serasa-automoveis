@@ -20,10 +20,11 @@ declare module "oracledb" {
   }
 
   let fetchTypeHandler:
-    | ((meta: { dbType: number }) => { type: number; mapFn?: (v: unknown) => unknown } | undefined)
+    | ((meta: { dbType: number }) => { type?: number; mapFn?: (v: unknown) => unknown } | undefined)
     | undefined;
 
   function getConnection(attrs: ConnectionAttrs): Promise<Connection>;
+  function initOracleClient(opts?: { libDir?: string }): void;
 
   export {
     OUT_FORMAT_OBJECT,
