@@ -1056,7 +1056,7 @@ function RateiosGeraisPage() {
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Nº Processo (Único Auto)</label>
                 <Input
-                  placeholder="Ex: PROC-2026-001"
+                  placeholder=""
                   value={nrProcesso}
                   onChange={(e) => setNrProcesso(e.target.value)}
                   className="w-52 font-mono"
@@ -1069,10 +1069,10 @@ function RateiosGeraisPage() {
                   <label className="text-sm font-medium">Empresa <span className="text-destructive">*</span></label>
                   <Select value={searchEmpCod} onValueChange={setSearchEmpCod}>
                     <SelectTrigger className="w-64">
-                      <SelectValue placeholder="Selecione a empresa…" />
+                      <SelectValue placeholder="Selecione…" />
                     </SelectTrigger>
                     <SelectContent>
-                      {empresas.map((e) => (
+                      {empresasArr.map((e) => (
                         <SelectItem key={e.cod_empresa} value={String(e.cod_empresa)}>
                           {e.nome}
                         </SelectItem>
@@ -1083,7 +1083,7 @@ function RateiosGeraisPage() {
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Nº Nota <span className="text-destructive">*</span></label>
                   <Input
-                    placeholder="Ex: 52817873"
+                    placeholder=""
                     value={searchNota}
                     onChange={(e) => setSearchNota(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleBuscar()}
