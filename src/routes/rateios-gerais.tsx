@@ -3,10 +3,18 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { AppLayout } from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
-import { buscarNbsNota, type NbsRow } from "@/lib/nbs-mock-data";
+import { buscarNbsNotaServer } from "@/lib/nbs-oracle";
+import type { NbsRow } from "@/lib/nbs-mock-data";
 import { segmentoDaBandeira } from "@/lib/segmentos";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -551,7 +559,7 @@ function RateiosGeraisPage() {
   );
 
   /* ─────────── Busca NBS ─────────── */
-  const handleBuscar = useCallback(() => {
+  const handleBuscar = useCallback(async () => {
     const empNum = Number(searchEmpCod);
     const notaNum = Number(searchNota);
     if (!empNum || !notaNum) {
@@ -565,13 +573,20 @@ function RateiosGeraisPage() {
     setCc3ValOverrides(new Map());
     setAddedContabils([]);
     setStep((s) => Math.min(s, 1) as 1 | 2 | 3);
-    const resultado = buscarNbsNota(notaNum).filter((r) => r.cod_empresa === empNum);
-    setSearching(false);
-    if (resultado.length === 0) {
-      toast.error("Nota não encontrada para esta empresa.");
-      return;
+    try {
+      const resultado = await buscarNbsNotaServer({ data: { numeroNota: notaNum, codEmpresa: empNum } });
+      if (resultado.length === 0) {
+        toast.error("Nota não encontrada para esta empresa.");
+        return;
+      }
+      setNbsLinhas(resultado as NbsRow[]);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Erro: ${msg}`);
+      console.error(err);
+    } finally {
+      setSearching(false);
     }
-    setNbsLinhas(resultado);
   }, [searchEmpCod, searchNota]);
 
   /* ─────────── Selecionar nota → inicializa distribuição de CCs ─────────── */
@@ -758,7 +773,7 @@ function RateiosGeraisPage() {
           "CÓDIGO EMPRESA A PAGAR": l.cod_pagador,
           "NOME EMPRESA A PAGAR": l.nome_pagador,
           "NÚMERO FATURA": l.nr_fatura,
-          "DATA RATEIO": l.data_rateio,
+          "DATA RATEIO": formatDate(l.data_rateio),
           "CÓDIGO CENTRO DE CUSTO": l.cod_centro_custo,
           "CÓDIGO CONTA CONTÁBIL": l.cod_conta_contabil,
           "VALOR": valorFinal,
@@ -1051,14 +1066,19 @@ function RateiosGeraisPage() {
               {/* Campos de busca */}
               <div className="flex flex-wrap gap-3 items-end">
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Cód. Empresa <span className="text-destructive">*</span></label>
-                  <Input
-                    placeholder="Ex: 2"
-                    value={searchEmpCod}
-                    onChange={(e) => setSearchEmpCod(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleBuscar()}
-                    className="w-32 font-mono"
-                  />
+                  <label className="text-sm font-medium">Empresa <span className="text-destructive">*</span></label>
+                  <Select value={searchEmpCod} onValueChange={setSearchEmpCod}>
+                    <SelectTrigger className="w-64">
+                      <SelectValue placeholder="Selecione a empresa…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {empresas.map((e) => (
+                        <SelectItem key={e.cod_empresa} value={String(e.cod_empresa)}>
+                          {e.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Nº Nota <span className="text-destructive">*</span></label>
